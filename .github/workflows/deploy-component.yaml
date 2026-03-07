@@ -1,0 +1,146 @@
+name: Deploy Component to Instance
+on:
+  workflow_dispatch:
+    inputs:
+      HDB_VERSION:
+        description: Harper Version (latest, 4.6.1, etc)
+        type: string
+        required: true
+        default: latest
+      NODE_VERSION:
+        description: Node.js Version (lts/*, 18, 20, etc)
+        type: string
+        required: true
+        default: lts/*
+      ENVIRONMENT:
+        description: Enter environment name to deploy
+        type: string
+        required: true
+        default: dev
+      REFERENCE:
+        description: Branch or commit SHA to deploy
+        type: string
+        required: false
+      RESTART:
+        description: Restart Harper after deploy
+        type: boolean
+        required: true
+        default: true
+      REPLICATED:
+        description: Replicate to all cluster instances
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  deploy_component:
+    name: Deploy Component to Harper Instance
+    runs-on: ubuntu-latest
+
+    environment:
+      name: ${{ github.event.inputs.ENVIRONMENT }}
+
+    env:
+      HDB_VERSION: ${{ github.event.inputs.HDB_VERSION }}
+      ENVIRONMENT: ${{ github.event.inputs.ENVIRONMENT }}
+      RESTART: ${{ github.event.inputs.RESTART }}
+      REPLICATED: ${{ github.event.inputs.REPLICATED }}
+      HDB_ADMIN_USERNAME: ${{ secrets.HDB_ADMIN_USERNAME || secrets.HDB_USERNAME}}
+      HDB_ADMIN_PASSWORD: ${{ secrets.HDB_ADMIN_PASSWORD || secrets.HDB_PASSWORD}}
+      HDB_TARGET_URL: ${{ secrets.HDB_TARGET_URL || secrets.HDB_TARGET}}
+
+    steps:
+      - name: Check valid environment variables
+        shell: bash
+        run: |
+          echo "Checking valid required environment variables..."
+          missing=0
+          if [ -z "$HDB_ADMIN_USERNAME" ]; then
+            echo "::error::HDB_ADMIN_USERNAME is missing. Set as HDB_ADMIN_USERNAME or HDB_USERNAME in secrets for the selected environment."
+            missing=1
+          fi
+
+          if [ -z "$HDB_ADMIN_PASSWORD" ]; then
+            echo "::error::HDB_ADMIN_PASSWORD is missing. Set as HDB_ADMIN_PASSWORD or HDB_PASSWORD in secrets for the selected environment."
+            missing=1
+          fi
+
+          if [ -z "$HDB_TARGET_URL" ]; then
+            echo "::error::HDB_TARGET_URL is missing. Set as HDB_TARGET_URL or HDB_TARGET in secrets for the selected environment."
+            missing=1
+          fi
+
+          if [ "$missing" -eq 1 ]; then
+            exit 1
+          fi
+
+          echo "Validating HDB_TARGET_URL format..."
+          # Regex: must match https://<domain>:<port>
+          if ! [[ "$HDB_TARGET_URL" =~ ^https://[^:]+:[0-9]+$ ]]; then
+            echo "::error::HDB_TARGET_URL must be a valid URL including hostname and port (e.g. https://instance.com:9925). Set as HDB_TARGET_URL or HDB_TARGET in secrets for the selected environment."
+            exit 1
+          fi
+
+          echo "Environment variables are valid."
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.REFERENCE || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ github.event.inputs.NODE_VERSION }}
+
+      - name: Copy or create env file
+        shell: bash
+        run: |
+          chmod +x .github/scripts/set_env_file.sh
+          RESULT=$(./.github/scripts/set_env_file.sh $ENVIRONMENT | tail -n 1)
+          echo "Script result: $RESULT"
+
+          if [ "$RESULT" = "success" ]; then
+            echo ".env file set successfully."
+          elif [ "$RESULT" = "none" ]; then
+            echo "No .env files found, attempting to create from Github Secrets."
+
+            if [ -n "${{ secrets.ENV_BUNDLE }}" ]; then
+              echo "${{ secrets.ENV_BUNDLE }}" > .env
+              echo ".env file created from ENV_BUNDLE secret."
+            else
+              echo "No ENV_BUNDLE secret found. Proceeding without .env file."
+            fi
+          else
+            echo "Error setting .env file."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          echo "Installing dependencies..."
+          npm install
+
+      - name: Install Harper
+        shell: bash
+        run: |
+          chmod +x .github/scripts/install_harper.sh
+          ./.github/scripts/install_harper.sh $HDB_VERSION $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD
+
+      - name: Build the app (if repo used TypeScript)
+        shell: bash
+        run: |
+          if [[ -f "./tsconfig.json" ]] && grep -q '"typescript"' package.json; then
+            echo "TypeScript detected via tsconfig.json and dependency check, building the app..."
+            npm run build
+          else
+            echo "TypeScript not detected, skipping build step."
+          fi
+
+      - name: Deploy Harper to target
+        shell: bash
+        run: |
+          chmod +x .github/scripts/deploy_harper_cli.sh
+          ./.github/scripts/deploy_harper_cli.sh $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD $HDB_TARGET_URL $REPLICATED $RESTART

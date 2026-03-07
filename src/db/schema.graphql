@@ -1,0 +1,44 @@
+scalar Any
+scalar Blob
+scalar Long
+
+# This table will store cached webpages to be served from cache on subsequent requests.
+type CacheContent @table(database: "DefaultCache") {
+	cacheKey: String @primaryKey
+	# The full HTML of the cached webpage. It is most efficient to store the page contents in binary format, but can also
+	# be stored as a string if you will do text processing on it
+	data: Blob!
+	headers: String!
+	debugHeaders: String
+	groupCode: String @indexed # optional code for grouped evictions
+	cacheTags: String # optional tags for fine grained invalidation
+	url: String @indexed
+	refreshedAt: Long
+}
+
+# This table will store cached api response data to be served from cache on subsequent requests.
+# TTLs set on record level based on rules defined in TTLRules table
+type CacheContent @table(database: "APICache") {
+	cacheKey: String @primaryKey
+	data: Blob!
+	headers: String!
+	debugHeaders: String
+	groupCode: String @indexed # optional code for grouped evictions
+	cacheTags: String # optional tags for fine grained invalidation
+	url: String @indexed
+	refreshedAt: Long
+}
+
+type TTLRules @table(database: "CacheManagement") {
+	id: ID @primaryKey
+	description: String
+	pathPatterns: [String]!
+	ttl: String! # i.e. 30m, 1h, 6h, 1d, 1m, 1y, origin_expires, never
+	groupCode: String # optional code for grouped evictions
+	additionalMatchCritera: [Any] # optional additional criteria to match (i.e. headers, query params, etc. (see README for details)
+}
+
+type CacheInvalidation @table(database: "CacheManagement") {
+	id: Int @primaryKey
+	timestamps: Any # {[String]: Long}
+}

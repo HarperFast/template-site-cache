@@ -1,0 +1,10 @@
+name: 'JavaScript SAST Config'
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - '**/.github/**'
+  - '**/node_modules/**'
+  - '**/test/**'
+  - '**/tests/**'

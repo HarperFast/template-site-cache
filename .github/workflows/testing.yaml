@@ -1,0 +1,160 @@
+name: Run Code Tests
+
+on:
+  pull_request:
+    branches:
+      - '**'
+
+  workflow_dispatch:
+    inputs:
+      HDB_VERSION:
+        description: Harper Version (latest, 4.6.1, etc)
+        type: string
+        required: true
+        default: latest
+      NODE_VERSION:
+        description: Node.js Version (lts/*, 18, 20, etc)
+        type: string
+        required: true
+        default: lts/*
+
+jobs:
+  check-performance-tests:
+    name: Run Performance Test Checks
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Check for K6 setup
+        shell: bash
+        run: |
+          chmod +x .github/scripts/check_k6_setup.sh
+          ./.github/scripts/check_k6_setup.sh tests/performance
+
+  run-integration-tests:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+
+    env:
+      CONTAINER_NAME: harperdb
+      HDB_ADMIN_USERNAME: HDB_ADMIN
+      HDB_ADMIN_PASSWORD: password
+      HDB_DEPLOY_URL: http://localhost:9925
+      HDB_TESTING_URL: https://localhost:9926
+      INTEGRATION_TEST_DIR: tests/integration
+      ENVIRONMENT: stage
+      MOCK_ORIGIN_HOST: host.docker.internal
+      MOCK_DEFAULT_ORIGIN_PORT: 4101
+      MOCK_API_ORIGIN_PORT: 4102
+      MOCK_DEFAULT_ORIGIN_URL: http://host.docker.internal:4101
+      MOCK_API_ORIGIN_URL: http://host.docker.internal:4102
+      CACHE_DEFAULT_ORIGIN_OVERRIDE: http://host.docker.internal:4101
+      CACHE_API_ORIGIN_OVERRIDE: http://host.docker.internal:4102
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Load HarperDB and Node.js versions
+        shell: bash
+        run: |
+          echo "Loading versions.txt for push/PR..."
+          if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
+            source .github/config/versions.txt
+            echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
+            echo "HDB_VERSION=$HDB_VERSION" >> "$GITHUB_ENV"
+          else
+            echo "NODE_VERSION=${{ github.event.inputs.NODE_VERSION }}" >> "$GITHUB_ENV"
+            echo "HDB_VERSION=${{ github.event.inputs.HDB_VERSION }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          echo "Installing Node.js dependencies"
+          rm -rf node_modules package-lock.json
+          npm install
+
+      - name: Check for test setup
+        shell: bash
+        run: |
+          chmod +x .github/scripts/check_test_setup.sh
+          TEST_TYPE=$(./.github/scripts/check_test_setup.sh $INTEGRATION_TEST_DIR | tail -n 1)
+          echo "Test type detected: $TEST_TYPE"
+          echo "TEST_TYPE=$TEST_TYPE" >> "$GITHUB_ENV"
+
+      - name: Install Harper
+        shell: bash
+        run: |
+          chmod +x .github/scripts/install_harper.sh
+          ./.github/scripts/install_harper.sh $HDB_VERSION $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD
+
+      - name: Start Harper Docker container
+        shell: bash
+        run: |
+          chmod +x .github/scripts/start_harper_docker.sh
+          ./.github/scripts/start_harper_docker.sh $CONTAINER_NAME $HDB_VERSION $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD
+
+      - name: Build the app (if repo used TypeScript)
+        shell: bash
+        run: |
+          if [[ -f "./tsconfig.json" ]] && grep -q '"typescript"' package.json; then
+            echo "TypeScript detected via tsconfig.json and dependency check, building the app..."
+            npm run build
+          else
+            echo "TypeScript not detected, skipping build step."
+          fi
+
+      - name: Deploy component to Harper container
+        shell: bash
+        run: |
+          chmod +x .github/scripts/deploy_harper_cli.sh
+          ./.github/scripts/deploy_harper_cli.sh $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD $HDB_DEPLOY_URL $CONTAINER_NAME
+
+      - name: Run integration tests
+        shell: bash
+        run: |
+          echo "Running integration tests with test type: $TEST_TYPE"
+          set -o pipefail
+
+          export TEST_DOMAIN=$HDB_TESTING_URL
+
+          if [[ "$TEST_TYPE" == "supertest" ]]; then
+            echo "Running Supertest integration tests with Vitest..."
+            npx vitest run \
+              --config .github/config/vitest.config.js \
+              --coverage.enabled true \
+              --coverage.reporter lcov \
+              2>&1 | tee "$INTEGRATION_TEST_DIR/test-report.txt"
+          elif [[ "$TEST_TYPE" == "c8" ]]; then
+            echo "Running Node tests with c8 coverage..."
+            npx c8 \
+              --reporter=lcov \
+              node --test "$INTEGRATION_TEST_DIR/integration.test.js" \
+              2>&1 | tee "$INTEGRATION_TEST_DIR/test-report.txt"
+          else
+            echo "Unknown test type: $TEST_TYPE"
+            exit 1
+          fi
+
+      - name: Upload test result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: '${{ env.INTEGRATION_TEST_DIR }}/test-report.txt'
+
+      - name: Upload coverage report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-coverage
+          path: 'coverage/'

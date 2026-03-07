@@ -1,0 +1,53 @@
+# This workflow updates the github-only branch that contains only the .github directory contents
+# It runs whenever there are new commits to main
+# And is used to allow subtree handling of the .github directory in other repos
+
+name: Update github-only branch
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  update-branch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Sync .github contents to github-only branch
+        shell: bash
+        run: |
+          # Configure identity for commits
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Checkout the github-only branch
+          git checkout -b github-only origin/github-only
+
+          # Remove all files except .git
+          find . -mindepth 1 -maxdepth 1 -name '.git' -prune -o -exec rm -rf {} + 2>/dev/null || true
+
+          # Copy .github directory from main
+          git checkout main -- .github || (echo "No .github directory found in main" && exit 1)
+
+          # Move contents to top-level
+          mv .github/* . || true
+          rm -rf .github
+
+          # Check if there are any changes
+          if git diff --quiet && git diff --cached --quiet; then
+              echo "No changes to commit"
+              exit 0
+          fi
+
+          # Commit and push changes
+          git add -A
+          git commit -m "chore: sync .github directory from main ($(git rev-parse --short main))"
+          git push origin github-only

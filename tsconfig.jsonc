@@ -1,0 +1,26 @@
+// This is an example tsconfig file to be used as a base for TypeScript projects.
+// It extends the HarperDB code guidelines for Node.js projects.
+// Remove these comments and change file to `.json` for use in your project (keep at root level).
+{
+	"extends": "@harperdb/code-guidelines/tsconfig.node.json",
+	"compilerOptions": {
+		"declaration": true,
+		"outDir": "./dist",
+		"rootDir": "./src",
+		"baseUrl": ".",
+		"paths": {
+			"harperdb": ["./src/harper.d.ts"],
+		},
+		"noImplicitAny": false,
+		"target": "ES2022",
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+	},
+	"include": ["src/**/*.ts"],
+	"exclude": ["node_modules", "dist", "tests"],
+}

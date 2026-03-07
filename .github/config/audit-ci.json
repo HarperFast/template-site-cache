@@ -1,0 +1,10 @@
+{
+	"report-type": "full",
+	"high": true,
+	"pass-enoaudit": true,
+	"output-format": "json",
+	"retry-count": 2,
+	"log-level": "info",
+	"ignore-dev": false,
+	"allowlist": []
+}
