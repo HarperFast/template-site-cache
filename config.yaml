@@ -2,6 +2,6 @@ rest: true
 graphqlSchema:
   files: src/db/schema.graphql
 jsResource:
-  files: dist/src/index.js
+  files: dist/index.js
 loadEnv:
   files: '.env'

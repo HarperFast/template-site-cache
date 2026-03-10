@@ -432,7 +432,7 @@ Expected behavior:
 
 For non-reserved paths, the interceptor reads:
 
-- `x-hdb-authorization: Basic <base64(username:password)>`
+- `authorization: Basic <base64(username:password)>`
 
 Then calls `server.authenticateUser(username, password)`.
 
@@ -443,8 +443,23 @@ HDB_ADMIN:password -> Basic SERCX0FETUlOOnBhc3N3b3Jk
 ```
 
 ```http
-x-hdb-authorization: Basic SERCX0FETUlOOnBhc3N3b3Jk
+authorization: Basic SERCX0FETUlOOnBhc3N3b3Jk
 ```
+
+### Required roles
+
+The component enforces role-based access via `ALLOWED_ROLES`:
+
+```ts
+ALLOWED_ROLES = ['cache_user', 'super_user'];
+```
+
+Requests authenticated with a user that does not hold one of these roles will be rejected. To grant access to a user:
+
+1. Create the user in Harper with the appropriate role, or assign an existing user the `cache_user` or `super_user` role.
+2. Harper's built-in `super_user` role has full access. For restricted access, use `cache_user`.
+
+See [Configuring Roles](https://docs.harperdb.io/docs/reference/roles#configuring-roles) in the Harper documentation for how to create and assign custom roles.
 
 ## Run and Deploy
 
