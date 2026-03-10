@@ -13,7 +13,8 @@ const randomInt = (min: number, max: number) => {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const resolveEnvInt = (name: string, defaultValue: number): number => process.env[name] ? parseInt(process.env[name]!, 10) : defaultValue;
+const resolveEnvInt = (name: string, defaultValue: number): number =>
+	process.env[name] ? parseInt(process.env[name]!, 10) : defaultValue;
 
 const LOAD_TEST_MODE = parseBool(process.env.HDB_LOAD_TEST_MODE);
 const LOAD_TEST_MIN_DELAY_MS = 30;
