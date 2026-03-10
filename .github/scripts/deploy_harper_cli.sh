@@ -31,5 +31,6 @@ harperdb deploy target=$TARGET replicated=$REPLICATED restart=$RESTART
 # Wait for the container to be ready after restart
 .github/scripts/wait_harper_ready.sh "$CONTAINER_NAME"
 
-harperdb get_components
-harperdb describe_all
+docker logs "$CONTAINER_NAME"
+docker exec "$CONTAINER_NAME" harperdb get_components
+docker exec "$CONTAINER_NAME" harperdb describe_all
