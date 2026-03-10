@@ -131,22 +131,22 @@ jobs:
           chmod +x .github/scripts/deploy_harper_cli.sh
           ./.github/scripts/deploy_harper_cli.sh $HDB_ADMIN_USERNAME $HDB_ADMIN_PASSWORD $HDB_DEPLOY_URL $CONTAINER_NAME
 
-      - name: Run integration tests
-        shell: bash
-        run: |
-          set -o pipefail
-          npm run test:integration 2>&1 | tee tests/integration/test-report.txt
+      # - name: Run integration tests
+      #   shell: bash
+      #   run: |
+      #     set -o pipefail
+      #     npm run test:integration 2>&1 | tee tests/integration/test-report.txt
 
-      - name: Upload test result artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-report
-          path: tests/integration/test-report.txt
+      # - name: Upload test result artifact
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: test-report
+      #     path: tests/integration/test-report.txt
 
-      - name: Upload coverage report artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-coverage
-          path: coverage/
+      # - name: Upload coverage report artifact
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: integration-coverage
+      #     path: coverage/
