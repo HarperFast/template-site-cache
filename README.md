@@ -52,7 +52,7 @@ Incoming traffic is processed by `server.http(...)`:
 - Reserved paths bypass cache routing:
   - `/status`
   - `/prometheus_exporter/metrics`
-  - `/cache/config`
+  - `/cache/ttlConfig`
   - `/cache/invalidate`
 - Other requests are authenticated using `x-hdb-authorization` (Basic auth).
 - Requests are classified as API traffic when either condition matches:
@@ -129,16 +129,16 @@ Supported rule policies in runtime:
 - Duration policy: numeric duration converted to seconds.
 - `origin_expires`: use upstream `Expires` semantics.
 - `never`: no expiration timestamp is set.
+- `no_cache`: explicitly disallow caching
 
 Validation on the admin resource currently accepts:
 
 - Durations: `1m`, `6h`, `1d`, `1y` (pattern: integer + `m|h|d|y`)
-- Specials: `origin_expires`, `never`
+- Specials: `origin_expires`, `never`, `no_cache`
 
 Note:
 
 - If no TTL rule matches, the request is treated as non-cacheable by default.
-- The starter README references `never_expire` and `no_cache`; current source code uses `never` and does not include `no_cache` as a rule policy.
 
 ### Additional match criteria
 

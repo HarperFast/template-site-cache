@@ -209,8 +209,8 @@ const harperRequest = async (pathname, init = {}) => {
 	});
 };
 
-const callJSONResource = async (paths, body, expectedStatuses) => {
-	for (const resourcePath of paths) {
+const callJSONResource = async (resourcePath, body, expectedStatuses) => {
+	try {
 		const response = await harperRequest(resourcePath, {
 			method: 'POST',
 			headers: {
@@ -218,29 +218,29 @@ const callJSONResource = async (paths, body, expectedStatuses) => {
 			},
 			body: JSON.stringify(body),
 		});
-
-		if (response.status === 404) continue;
+	
 		const responseText = await response.text();
+	
 		assert.ok(
 			expectedStatuses.includes(response.status),
 			`${resourcePath} returned ${response.status}. Body: ${responseText}`
 		);
-		return;
+	} catch (e) {
+		console.log(e);
+		throw new Error(`Error calling ${resourcePath}: ${e.message}`);
 	}
-
-	throw new Error(`None of the resource routes were available: ${paths.join(', ')}`);
 };
 
 const createTTLRule = async (rule) => {
-	await callJSONResource(['/cache/ttlConfig'], rule, [200, 201, 204]);
+	await callJSONResource('/cache/ttlConfig', rule, [200, 201, 204]);
 };
 
 const invalidateByType = async (type) => {
-	await callJSONResource(['/cache/invalidate'], { type }, [200]);
+	await callJSONResource('/cache/invalidate', { type }, [200]);
 };
 
 const invalidateByCacheTag = async (cacheTag) => {
-	await callJSONResource(['/cache/invalidate'], { type: 'cacheTag', cacheTag }, [200]);
+	await callJSONResource('/cache/invalidate', { type: 'cacheTag', cacheTag }, [200]);
 };
 
 const waitForCacheState = async (requestPath, headers, expectedState, failureHint) => {
