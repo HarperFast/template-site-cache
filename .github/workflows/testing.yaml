@@ -76,9 +76,9 @@ jobs:
       CONTAINER_NAME: harperdb
       HDB_ADMIN_USERNAME: HDB_ADMIN
       HDB_ADMIN_PASSWORD: password
-      HDB_DEPLOY_URL: http://localhost:9925
-      HDB_OPERATIONS_URL: http://localhost:9925
-      TEST_DOMAIN: http://localhost:9926
+      HDB_DEPLOY_URL: https://localhost:9925
+      HDB_OPERATIONS_URL: https://localhost:9925
+      TEST_DOMAIN: https://localhost:9926
       ENVIRONMENT: integration
       MOCK_ORIGIN_HOST: host.docker.internal
       MOCK_DEFAULT_ORIGIN_PORT: 4101

@@ -3,7 +3,7 @@ import { after, before, describe, test } from 'node:test';
 import { createServer } from 'node:http';
 import { Agent, fetch } from 'undici';
 
-const TEST_DOMAIN = process.env.TEST_DOMAIN || 'http://localhost:9926';
+const TEST_DOMAIN = process.env.TEST_DOMAIN || 'https://localhost:9926';
 // const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925';
 const REQUEST_TIMEOUT_MS = Number(process.env.INTEGRATION_TIMEOUT_MS || '90000');
 
