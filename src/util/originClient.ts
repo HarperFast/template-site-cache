@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import { Pool, fetch as undiciFetch } from 'undici';
 
-const ORIGIN_MAX_CONNECTIONS = 80;
-const CLIENT_TTL_MS = 300_000;
+const DEFAULT_ORIGIN_MAX_CONNECTIONS = 80;
+const DEFAULT_CLIENT_TTL_MS = 300_000;
 
 const poolsByOrigin = new Map();
 
@@ -13,6 +13,7 @@ const randomInt = (min: number, max: number) => {
 	return Math.floor(Math.random() * (max - min + 1)) + min;
 };
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const resolveEnvInt = (name: string, defaultValue: number): number => process.env[name] ? parseInt(process.env[name]!, 10) : defaultValue;
 
 const LOAD_TEST_MODE = parseBool(process.env.HDB_LOAD_TEST_MODE);
 const LOAD_TEST_MIN_DELAY_MS = 30;
@@ -76,9 +77,9 @@ const getPool = (origin: string): Pool => {
 	let pool = poolsByOrigin.get(origin);
 	if (!pool) {
 		pool = new Pool(origin, {
-			connections: ORIGIN_MAX_CONNECTIONS,
-			keepAliveTimeout: CLIENT_TTL_MS,
-			keepAliveMaxTimeout: CLIENT_TTL_MS,
+			connections: resolveEnvInt('MAX_CONNECTIONS', DEFAULT_ORIGIN_MAX_CONNECTIONS),
+			keepAliveTimeout: resolveEnvInt('CLIENT_TTL_MS', DEFAULT_CLIENT_TTL_MS),
+			keepAliveMaxTimeout: resolveEnvInt('CLIENT_TTL_MS', DEFAULT_CLIENT_TTL_MS),
 		});
 		poolsByOrigin.set(origin, pool);
 	}

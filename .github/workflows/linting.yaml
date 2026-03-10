@@ -22,14 +22,16 @@ jobs:
     name: Lint JavaScript Code
     runs-on: ubuntu-latest
 
+    env:
+      ENVIRONMENT: integration
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Load HarperDB and Node.js versions
+      - name: Load Node.js version
         shell: bash
         run: |
-          echo "Loading versions.txt for push/PR..."
           if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then
             source .github/config/versions.txt
             echo "NODE_VERSION=$NODE_VERSION" >> "$GITHUB_ENV"
@@ -42,25 +44,15 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install ESLint and Harper code guidelines
+      - name: Install dependencies
+        shell: bash
+        run: npm install
+
+      - name: Run ESLint
         shell: bash
         run: |
-          echo "Installing ESLint and Harper code guidelines"
-          if [ ! -d "node_modules" ]; then
-            npm init -y
-          fi
-
-          npm install --save-dev @harperdb/code-guidelines eslint prettier
-
-      - name: Run ESLint with config
-        id: run_lint
-        shell: bash
-        run: |
-          echo "Running ESLint with custom Harper configuration"
           set -o pipefail
-
-          npx eslint . --config .github/config/eslint.config.mjs \
-            2>&1 | tee eslint-report.txt
+          npm run lint 2>&1 | tee eslint-report.txt
 
       - name: Upload ESLint report artifact
         if: always()
