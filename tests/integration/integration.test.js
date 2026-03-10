@@ -39,6 +39,7 @@ const harperOpsRequest = (body) =>
 		method: 'POST',
 		headers: {
 			'content-type': 'application/json',
+			'Authorization': authHeader,
 		},
 		body: JSON.stringify(body),
 		dispatcher: insecureAgent,
