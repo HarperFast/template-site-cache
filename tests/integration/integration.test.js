@@ -219,9 +219,13 @@ const callJSONResource = async (paths, body, expectedStatuses) => {
 			body: JSON.stringify(body),
 		});
 
+		console.log(resourcePath, response.status);
+
 		if (response.status === 404) continue;
 
+		
 		const responseText = await response.text();
+		console.log({responseText});
 		assert.ok(
 			expectedStatuses.includes(response.status),
 			`${resourcePath} returned ${response.status}. Body: ${responseText}`
