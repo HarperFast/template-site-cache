@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { Agent, fetch } from 'undici';
 
 const TEST_DOMAIN = process.env.TEST_DOMAIN || 'http://localhost:9926';
-const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925';
+// const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925';
 const REQUEST_TIMEOUT_MS = Number(process.env.INTEGRATION_TIMEOUT_MS || '90000');
 
 const MOCK_BIND_HOST = process.env.MOCK_ORIGIN_BIND_HOST || '0.0.0.0';
@@ -34,37 +34,37 @@ let apiOrigin = null;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const harperOpsRequest = (body) =>
-	fetch(`${OPERATIONS_URL}/`, {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-			'Authorization': authHeader,
-		},
-		body: JSON.stringify(body),
-		dispatcher: insecureAgent,
-	});
+// const harperOpsRequest = (body) =>
+// 	fetch(`${OPERATIONS_URL}/`, {
+// 		method: 'POST',
+// 		headers: {
+// 			'content-type': 'application/json',
+// 			'Authorization': authHeader,
+// 		},
+// 		body: JSON.stringify(body),
+// 		dispatcher: insecureAgent,
+// 	});
 
-const dropDatabase = async (database) => {
-	const response = await harperOpsRequest({ operation: 'drop_database', database });
-	if (!response.ok) {
-		const text = await response.text();
-		// "does not exist" is fine — nothing to drop
-		if (!/does not exist|unknown database/i.test(text)) {
-			console.warn(`Warning: drop_database(${database}) returned ${response.status}: ${text}`);
-		}
-	}
-};
+// const dropDatabase = async (database) => {
+// 	const response = await harperOpsRequest({ operation: 'drop_database', database });
+// 	if (!response.ok) {
+// 		const text = await response.text();
+// 		// "does not exist" is fine — nothing to drop
+// 		if (!/does not exist|unknown database/i.test(text)) {
+// 			console.warn(`Warning: drop_database(${database}) returned ${response.status}: ${text}`);
+// 		}
+// 	}
+// };
 
-const resetHarperState = async () => {
-	await Promise.all([dropDatabase('DefaultCache'), dropDatabase('APICache'), dropDatabase('CacheManagement')]);
+// const resetHarperState = async () => {
+// 	await Promise.all([dropDatabase('DefaultCache'), dropDatabase('APICache'), dropDatabase('CacheManagement')]);
 
-	// Restart may close the connection before a response arrives — that's expected
-	await harperOpsRequest({ operation: 'restart_service', service: 'http_workers' }).catch(() => {});
+// 	// Restart may close the connection before a response arrives — that's expected
+// 	await harperOpsRequest({ operation: 'restart_service', service: 'http_workers' }).catch(() => {});
 
-	// Give the process a moment to begin shutting down before we start polling
-	await delay(2000);
-};
+// 	// Give the process a moment to begin shutting down before we start polling
+// 	await delay(2000);
+// };
 
 const closeServer = async (server) => {
 	await new Promise((resolve, reject) => {
@@ -307,7 +307,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			throw new Error('TEST_DOMAIN is required for integration tests. Example: TEST_DOMAIN=http://localhost:9926');
 		}
 
-		await resetHarperState();
+		// await resetHarperState();
 
 		defaultOrigin = await startDefaultOrigin();
 		apiOrigin = await startAPIOrigin();
