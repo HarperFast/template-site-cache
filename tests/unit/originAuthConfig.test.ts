@@ -1,10 +1,9 @@
 import assert from 'node:assert/strict';
 import { afterEach, before, describe, test } from 'node:test';
 
-import cacheConfiguration from '../../cacheConfiguration.json' with { type: 'json' };
-import { resolveOriginAuthHeader } from '../../src/constants/index.ts';
+import { CACHE_CONFIG, resolveOriginAuthHeader } from '../../src/constants/index.ts';
 
-const config = cacheConfiguration as any;
+const config = CACHE_CONFIG;
 const originalApiOriginAuthHeader = config.apiOriginAuthHeader;
 const originalDefaultOriginAuthHeader = config.defaultOriginAuthHeader;
 

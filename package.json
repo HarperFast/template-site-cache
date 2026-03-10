@@ -9,6 +9,7 @@
 		"dev": "tsc; harperdb dev .",
 		"test:unit": "node --test --import tsx tests/unit/*.test.ts",
 		"test:integration": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
+		"lint": "eslint src",
 		"format": "prettier --write .",
 		"postinstall": "npm link harperdb",
 		"postuninstall": "npm link harperdb"
@@ -27,7 +28,8 @@
 		"graphql": "^16.10.0",
 		"prettier": "^3.4.2",
 		"tsx": "^4.19.2",
-		"typescript": "^5.7.2"
+		"typescript": "^5.7.2",
+		"typescript-eslint": "^8.57.0"
 	},
 	"dependencies": {
 		"undici": "^7.22.0"

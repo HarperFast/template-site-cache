@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { Agent, fetch } from 'undici';
 
 const TEST_DOMAIN = process.env.TEST_DOMAIN || 'http://localhost:9926';
+const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925';
 const REQUEST_TIMEOUT_MS = Number(process.env.INTEGRATION_TIMEOUT_MS || '90000');
 
 const MOCK_BIND_HOST = process.env.MOCK_ORIGIN_BIND_HOST || '0.0.0.0';
@@ -32,6 +33,37 @@ let defaultOrigin = null;
 let apiOrigin = null;
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const harperOpsRequest = (body) =>
+	fetch(`${OPERATIONS_URL}/`, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+		},
+		body: JSON.stringify(body),
+		dispatcher: insecureAgent,
+	});
+
+const dropDatabase = async (database) => {
+	const response = await harperOpsRequest({ operation: 'drop_database', database });
+	if (!response.ok) {
+		const text = await response.text();
+		// "does not exist" is fine — nothing to drop
+		if (!/does not exist|unknown database/i.test(text)) {
+			console.warn(`Warning: drop_database(${database}) returned ${response.status}: ${text}`);
+		}
+	}
+};
+
+const resetHarperState = async () => {
+	await Promise.all([dropDatabase('DefaultCache'), dropDatabase('APICache'), dropDatabase('CacheManagement')]);
+
+	// Restart may close the connection before a response arrives — that's expected
+	await harperOpsRequest({ operation: 'restart_service', service: 'http_workers' }).catch(() => {});
+
+	// Give the process a moment to begin shutting down before we start polling
+	await delay(2000);
+};
 
 const closeServer = async (server) => {
 	await new Promise((resolve, reject) => {
@@ -211,10 +243,6 @@ const invalidateByCacheTag = async (cacheTag) => {
 	await callJSONResource(['/cache/invalidate'], { type: 'cacheTag', cacheTag }, [200]);
 };
 
-const invalidateByUrl = async (url) => {
-	await callJSONResource(['/cache/invalidate'], { type: 'url', url }, [200]);
-};
-
 const waitForCacheState = async (requestPath, headers, expectedState, failureHint) => {
 	const deadline = Date.now() + REQUEST_TIMEOUT_MS;
 	let lastObservation = 'no observation yet';
@@ -278,6 +306,8 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 		if (!TEST_DOMAIN) {
 			throw new Error('TEST_DOMAIN is required for integration tests. Example: TEST_DOMAIN=http://localhost:9926');
 		}
+
+		await resetHarperState();
 
 		defaultOrigin = await startDefaultOrigin();
 		apiOrigin = await startAPIOrigin();
@@ -534,9 +564,13 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			`cacheTag invalidation did not evict entries for ${cacheTag}`
 		);
 
-		const final = await harperRequest(requestPath, { headers: PAGE_HEADERS });
+		const final = await waitForCacheState(
+			requestPath,
+			PAGE_HEADERS,
+			'hit',
+			'Cache was not re-populated after cacheTag invalidation miss'
+		);
 		assert.equal(final.status, 200);
-		assert.equal(final.headers.get('x-hdb-cache'), 'hit');
 
 		assert.ok(defaultOrigin.hitsFor('GET', originPath) - beforeHits >= 2);
 	});
@@ -563,15 +597,19 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			'Page invalidation did not become visible to cache handlers within timeout.'
 		);
 
-		const final = await harperRequest(requestPath, { headers: PAGE_HEADERS });
+		const final = await waitForCacheState(
+			requestPath,
+			PAGE_HEADERS,
+			'hit',
+			'Cache was not re-populated after page invalidation miss'
+		);
 		assert.equal(final.status, 200);
-		assert.equal(final.headers.get('x-hdb-cache'), 'hit');
 
 		assert.ok(defaultOrigin.hitsFor('GET', originPath) - beforeHits >= 2);
 	});
 
 	test('api invalidation forces cache refresh', async () => {
-		const requestPath = `/api/it/${runId}/products?invalidate=true`;
+		const requestPath = `/api/it/${runId}/products`;
 		const originPath = `/it/${runId}/products`;
 		const beforeHits = apiOrigin.hitsFor('GET', originPath);
 
@@ -592,9 +630,13 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			'API invalidation did not become visible to cache handlers within timeout.'
 		);
 
-		const final = await harperRequest(requestPath);
+		const final = await waitForCacheState(
+			requestPath,
+			{},
+			'hit',
+			'Cache was not re-populated after API invalidation miss'
+		);
 		assert.equal(final.status, 200);
-		assert.equal(final.headers.get('x-hdb-cache'), 'hit');
 
 		assert.ok(apiOrigin.hitsFor('GET', originPath) - beforeHits >= 2);
 	});

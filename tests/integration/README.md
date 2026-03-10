@@ -6,28 +6,23 @@ This suite assumes Harper is already running and deployed, and uses mocked origi
 
 Use two terminals.
 
-### Terminal 1: Start Harper with origin overrides
+### Terminal 1: Start Harper with the integration config
 
 ```bash
-export ENVIRONMENT=stage
-export HDB_ADMIN_USERNAME=HDB_ADMIN
-export HDB_ADMIN_PASSWORD=password
-export CACHE_DEFAULT_ORIGIN_OVERRIDE=http://127.0.0.1:4101
-export CACHE_API_ORIGIN_OVERRIDE=http://127.0.0.1:4102
+export ENVIRONMENT=integration
 
 # start Harper in your normal way, for example:
 harperdb dev .
 ```
 
-If Harper was already running, restart it after setting these variables.
+`cacheConfiguration.integration.json` points mock origins to `172.17.0.1:4101` and `172.17.0.1:4102` by default. If your local setup needs different addresses, edit that file or create a `cacheConfiguration.local.json` and run with `ENVIRONMENT=local`.
+
+If Harper was already running, restart it after setting `ENVIRONMENT`.
 
 ### Terminal 2: Run integration tests
 
 ```bash
-export TEST_DOMAIN=http://localhost:9926
-export HDB_ADMIN_USERNAME=HDB_ADMIN
-export HDB_ADMIN_PASSWORD=password
-export MOCK_BIND_HOST=127.0.0.1
+export MOCK_BIND_HOST=0.0.0.0
 export MOCK_ORIGIN_HOST=127.0.0.1
 export MOCK_DEFAULT_ORIGIN_PORT=4101
 export MOCK_API_ORIGIN_PORT=4102
@@ -35,13 +30,10 @@ export MOCK_API_ORIGIN_PORT=4102
 npm run test:integration
 ```
 
+`HDB_OPERATIONS_URL` must point directly to Harper's Operations API port (default `9925`), which bypasses the cache component's HTTP interceptor. The test suite drops `DefaultCache`, `APICache`, and `CacheManagement` then restarts Harper at the start of each run to ensure a clean slate.
+
 If your Harper endpoint is different, change `TEST_DOMAIN` accordingly.
 
 ## CI Notes
 
-In GitHub Actions, Harper runs in Docker and should receive:
-
-- `CACHE_DEFAULT_ORIGIN_OVERRIDE=http://host.docker.internal:4101`
-- `CACHE_API_ORIGIN_OVERRIDE=http://host.docker.internal:4102`
-
-This forces mocked origins for integration tests instead of values from `cacheConfiguration.json`.
+In GitHub Actions, Harper runs in Docker with `ENVIRONMENT=integration`. The `cacheConfiguration.integration.json` file points to `172.17.0.1` (the Docker bridge gateway), which is reachable from within the container when mock origins are bound to `0.0.0.0` on the host.

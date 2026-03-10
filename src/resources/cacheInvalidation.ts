@@ -65,7 +65,7 @@ export class Invalidate extends Resource {
 
 		const timestamp = Date.now();
 
-		let newInvalidations = { ...previousInvalidations?.timestamps };
+		const newInvalidations = { ...previousInvalidations?.timestamps };
 		let msg;
 
 		if (groupCode) {

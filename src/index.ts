@@ -2,18 +2,15 @@ import { handleAPI } from './cacheHandlers/apiCache.js';
 import { handleDefault } from './cacheHandlers/defaultCache.js';
 import { TTLRules } from './resources/ttlRules.js';
 import { Invalidate } from './resources/cacheInvalidation.js';
-import { decodeAuthHeader } from './util/auth.js';
 import type { CacheInvalidation } from './types/graphql.js';
-import { RESERVED_PATHS, ALLOWED_ROLES, CACHE_INVALIDATIONM_KEY, CACHE_CONFIG } from './constants/index.js';
+import { RESERVED_PATHS, CACHE_INVALIDATIONM_KEY, CACHE_CONFIG } from './constants/index.js';
 
 export const cache = { ttlConfig: TTLRules, invalidate: Invalidate };
 
 let cacheInvalidations: Record<string, number> = {};
 
-console.log('Cache server starting...');
-
 server.http(
-	async (request: any, next: Function) => {
+	async (request: any, next: (...args: unknown[]) => unknown) => {
 		if (RESERVED_PATHS.includes(request.url)) {
 			return next(request);
 		}

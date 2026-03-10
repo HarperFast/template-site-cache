@@ -1,4 +1,5 @@
-import cacheConfiguration from '../../cacheConfiguration.json' with { type: 'json' };
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export const RESERVED_PATHS = ['/status', '/prometheus_exporter/metrics', '/cache/ttlConfig', '/cache/invalidate']; // Paths that bypass cache logic
 export const KEY_OVERFLOW = 1000; // max key size before hashing
@@ -6,62 +7,32 @@ export const NO_BODY_RESPONSES = new Set([204, 304]); // HTTP status codes that 
 export const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export const ALLOWED_ROLES = ['cache_user', 'super_user'];
 export const CACHE_INVALIDATIONM_KEY = 1; // Primary key for cache invalidation record in the database
-export const CACHE_CONFIG = cacheConfiguration as Record<string, any>;
 
-export type OriginTarget = 'defaultOrigin' | 'apiOrigin';
+type OriginTarget = 'defaultOrigin' | 'apiOrigin';
 
-const normalizeEnvironment = (rawEnv?: string) => {
-	const env = String(rawEnv || '')
+const normalizeEnv = (raw?: string): string => {
+	const val = String(raw || '')
 		.trim()
 		.toLowerCase();
-	if (!env) return undefined;
-	if (env === 'prod' || env === 'production') return 'prod';
-	if (env === 'stage' || env === 'staging') return 'stage';
-	return env;
+	if (!val) return 'local';
+	if (val === 'production') return 'prod';
+	if (val === 'staging') return 'stage';
+	return val;
 };
 
-export const resolveConfiguredOrigin = (target: OriginTarget): string => {
-	const envOverride =
-		target === 'defaultOrigin'
-			? process.env.CACHE_DEFAULT_ORIGIN_OVERRIDE || process.env.HDB_DEFAULT_ORIGIN
-			: process.env.CACHE_API_ORIGIN_OVERRIDE || process.env.HDB_API_ORIGIN;
+const env = normalizeEnv(process.env.ENVIRONMENT);
+const configPath = resolve(process.cwd(), `cacheConfiguration.${env}.json`);
 
-	if (typeof envOverride === 'string' && envOverride) {
-		return envOverride;
-	}
-
-	const configuredOrigins = CACHE_CONFIG?.[target];
-
-	if (typeof configuredOrigins === 'string' && configuredOrigins) {
-		return configuredOrigins;
-	}
-
-	if (!configuredOrigins || typeof configuredOrigins !== 'object') {
-		throw new Error(`Missing ${target} in cacheConfiguration.json`);
-	}
-
-	const environmentKey = normalizeEnvironment(process.env.ENVIRONMENT);
-	if (environmentKey && typeof configuredOrigins[environmentKey] === 'string') {
-		return configuredOrigins[environmentKey];
-	}
-
-	if (typeof configuredOrigins.stage === 'string') {
-		return configuredOrigins.stage;
-	}
-
-	if (typeof configuredOrigins.prod === 'string') {
-		return configuredOrigins.prod;
-	}
-
-	const firstOrigin = Object.values(configuredOrigins).find((value) => typeof value === 'string');
-	if (typeof firstOrigin === 'string') {
-		return firstOrigin;
-	}
-
+let cacheConfigData: Record<string, any>;
+try {
+	cacheConfigData = JSON.parse(readFileSync(configPath, 'utf-8'));
+} catch {
 	throw new Error(
-		`Could not resolve ${target}. Set ENVIRONMENT to a configured key or provide stage/prod values in cacheConfiguration.json`
+		`Failed to load cacheConfiguration.${env}.json (resolved to ${configPath}). Set the ENVIRONMENT env var to match a cacheConfiguration.<env>.json file.`
 	);
-};
+}
+
+export const CACHE_CONFIG: Record<string, any> = cacheConfigData;
 
 const getTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 
@@ -85,7 +56,7 @@ export const resolveOriginAuthHeader = (target: OriginTarget): { headerName: str
 
 	if (!token) {
 		throw new Error(
-			`cacheConfiguration.json sets "${headerConfigKey}" but no token environment variable was provided. Set one of: ${tokenEnvNames.join(', ')}`
+			`cacheConfiguration.${env}.json sets "${headerConfigKey}" but no token environment variable was provided. Set one of: ${tokenEnvNames.join(', ')}`
 		);
 	}
 

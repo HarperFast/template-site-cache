@@ -8,7 +8,7 @@ import {
 	cachePutObservabilityHeaders,
 	normalizeHeaders,
 } from '../util/headers.js';
-import { CACHE_CONFIG, resolveConfiguredOrigin, resolveOriginAuthHeader } from '../constants/index.js';
+import { CACHE_CONFIG, resolveOriginAuthHeader } from '../constants/index.js';
 import type { IncomingMessage } from 'http';
 import type { TTLRuleMatchResult } from '../types/index.js';
 import { fetchFromOrigin } from '../util/originClient.js';
@@ -17,7 +17,7 @@ const { CacheContent: CacheContentTable } = databases.DefaultCache;
 
 const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMatchResult, startTime: number) => {
 	const path = request.url;
-	const origin = resolveConfiguredOrigin('defaultOrigin'); // get the origin URL from the config file
+	const origin = CACHE_CONFIG.defaultOrigin;
 	logger.info('Fetching from origin', origin, path);
 
 	let url = new URL(path, origin);
@@ -33,14 +33,14 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 	if (originAuthHeader) {
 		upstreamHeaders[originAuthHeader.headerName] = originAuthHeader.token;
 	}
+
 	const response = await fetchFromOrigin(url, { method: 'GET', headers: upstreamHeaders }); // Fetch the page content
-	const bodyBuffer = response.body ? Buffer.from(await response.arrayBuffer()) : null;
 
 	// dont cache an unsuccessful response from origin
 	if (!response.ok) {
 		logger.warn('Skipped caching for: ', path);
 		server.recordAnalytics(performance.now() - startTime, 'http-no-cache', 'PageCache');
-		return new Response(bodyBuffer, {
+		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
 			headers: { 'content-type': 'text/html' },
@@ -49,6 +49,7 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 
 	const normalizedHeaders = normalizeHeaders(response.headers);
 	const responseHeaderObj = new Headers(normalizedHeaders);
+	let streamForClient = response.body;
 
 	const shouldCache = !!ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
 
@@ -72,30 +73,36 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 		const cacheHeaders = new Headers(normalizedHeaders);
 		cacheHeaders.delete('set-cookie');
 
-		if (bodyBuffer) {
-			const blob = await createBlob(bodyBuffer);
-			await CacheContentTable.put(
-				cacheKey,
-				{
-					data: blob,
-					headers: JSON.stringify(Object.fromEntries(cacheHeaders.entries())),
-					debugHeaders: JSON.stringify(debugHeaders),
-					groupCode: ttlConfig.groupCode,
-					refreshedAt: Date.now(),
-					cacheTags: headerToCacheTags(cacheHeaders),
-					url: url.href,
-				},
-				{
-					expiresAt,
+		if (response.body) {
+			const [cacheStream, responseStream] = response.body.tee();
+			streamForClient = responseStream;
+
+			const saveToCache = async () => {
+				const blob = await createBlob(cacheStream);
+				if (blob) {
+					await CacheContentTable.put(
+						cacheKey,
+						{
+							data: blob,
+							headers: JSON.stringify(Object.fromEntries(cacheHeaders.entries())),
+							debugHeaders: JSON.stringify(debugHeaders),
+							groupCode: ttlConfig.groupCode,
+							refreshedAt: Date.now(),
+							cacheTags: headerToCacheTags(cacheHeaders),
+							url: url.href,
+						},
+						{ expiresAt }
+					);
 				}
-			);
+			};
+			saveToCache().catch((err) => logger.error('Error saving page cache', cacheKey, err));
 		}
 	}
 
 	responseHeaderObj.set('x-hdb-cache', shouldCache ? 'miss' : 'no-cache');
 	responseHeaderObj.set('x-hdb', 'true');
 
-	return new Response(bodyBuffer ?? null, {
+	return new Response(streamForClient ?? null, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: responseHeaderObj,

@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 
 import { buildAPICacheKey, buildPageCacheKey } from '../../src/util/cacheKeys.ts';
-import cacheConfiguration from '../../cacheConfiguration.json' with { type: 'json' };
+import { CACHE_CONFIG } from '../../src/constants/index.ts';
 
-const config = cacheConfiguration as any;
+const config = CACHE_CONFIG;
 const originalDefaultCacheKey = structuredClone(config.defaultCacheKey);
 const originalApiCacheKey = structuredClone(config.apiCacheKey);
 

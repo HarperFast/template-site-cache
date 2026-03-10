@@ -6,7 +6,8 @@ const CLIENT_TTL_MS = 300_000;
 
 const poolsByOrigin = new Map();
 
-const parseBool = (value: string | undefined): boolean => ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+const parseBool = (value: string | undefined): boolean =>
+	['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 const randomInt = (min: number, max: number) => {
 	if (max <= min) return min;
 	return Math.floor(Math.random() * (max - min + 1)) + min;

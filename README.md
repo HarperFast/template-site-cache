@@ -7,7 +7,7 @@ It supports:
 - A DB-backed TTL rule engine (regex + optional header/query conditions).
 - Cache bypass and debug observability headers.
 - Manual and timestamp-based invalidation.
-- Environment-based origin routing from `cacheConfiguration.json`.
+- Environment-based configuration via `cacheConfiguration.<env>.json` files, selected at boot by the `ENVIRONMENT` env var.
 
 ## Table of Contents
 
@@ -225,7 +225,59 @@ Source: `src/db/schema.graphql`
 
 ## Cache Configuration Reference
 
-Source: `cacheConfiguration.json`
+### File naming and environment selection
+
+Configuration is split into per-environment files named `cacheConfiguration.<env>.json`. The active file is selected at boot using the `ENVIRONMENT` environment variable:
+
+```bash
+ENVIRONMENT=prod    # loads cacheConfiguration.prod.json
+ENVIRONMENT=stage   # loads cacheConfiguration.stage.json
+ENVIRONMENT=integration  # loads cacheConfiguration.integration.json
+# unset or empty   # defaults to cacheConfiguration.local.json
+```
+
+Create one file per environment you deploy to. A minimal set looks like:
+
+```
+cacheConfiguration.local.json       ← local dev (default when ENVIRONMENT is unset)
+cacheConfiguration.stage.json
+cacheConfiguration.prod.json
+cacheConfiguration.integration.json ← used when running integration tests
+```
+
+If the resolved file does not exist, the app will throw at startup with a clear error indicating which file it tried to load.
+
+### Setting ENVIRONMENT in your deployment
+
+Set the `ENVIRONMENT` variable wherever your Harper process is launched. Examples:
+
+**Shell / systemd:**
+
+```bash
+ENVIRONMENT=prod harperdb run .
+```
+
+**Docker:**
+
+```dockerfile
+ENV ENVIRONMENT=prod
+```
+
+**docker-compose:**
+
+```yaml
+environment:
+  - ENVIRONMENT=prod
+```
+
+**Harper `config.yaml` (via `loadEnv.files: .env`):**
+
+```bash
+# .env
+ENVIRONMENT=prod
+```
+
+### Example file (`cacheConfiguration.stage.json`)
 
 ```json
 {
@@ -233,14 +285,14 @@ Source: `cacheConfiguration.json`
 	"apiPathPrefix": "/api/",
 	"apiHeader": { "key": "X-Fwd-Origin", "value": "API" },
 	"apiPathReplacement": { "search": "/api/", "replace": "" },
-	"apiOrigin": { "stage": "https://api.staging.example.com", "prod": "https://api.example.com" },
+	"apiOrigin": "https://api.staging.example.com",
 	"apiOriginAuthHeader": "",
 	"apiCacheKey": {
 		"includeHeaders": ["accept", "origin", "version"],
 		"includeQueryParams": "ALL",
 		"includeCookies": []
 	},
-	"defaultOrigin": { "stage": "https://www.harper.fast", "prod": "https://www.example.com" },
+	"defaultOrigin": "https://www.harper.fast",
 	"defaultOriginAuthHeader": "",
 	"defaultPathReplacement": false,
 	"defaultCacheKey": {
@@ -251,21 +303,23 @@ Source: `cacheConfiguration.json`
 }
 ```
 
+Note: `apiOrigin` and `defaultOrigin` are plain URL strings — there is no per-environment nesting inside the file. Environment selection is done entirely by which file is loaded.
+
 ### Field-by-field behavior
 
-| Key                     | Purpose                                                                 | Required |
-| ----------------------- | ----------------------------------------------------------------------- | -------- |
-| `cacheTagsHeader`       | Response header name read from origin to persist cache tags in records. | No       |
-| `apiPathPrefix`         | URL substring used to classify requests as API traffic.                 | Conditional: required if `apiOrigin` is set and `apiHeader` is not set |
-| `apiHeader`             | Header-based API classifier object (`key` + `value`).                   | Conditional: required if `apiOrigin` is set and `apiPathPrefix` is not set |
-| `apiPathReplacement`    | Rewrites incoming API path before forwarding to API origin.             | No       |
-| `apiOrigin`             | Per-environment API origin host, keyed by `process.env.ENVIRONMENT`.    | No       |
-| `apiOriginAuthHeader`   | Optional header name sent to API origin for auth token forwarding.      | Optional; if set, token env var is required |
-| `apiCacheKey`           | API cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`). | Conditional: required if `apiOrigin` is set |
-| `defaultOrigin`         | Per-environment default/page origin host.                               | Yes      |
-| `defaultOriginAuthHeader` | Optional header name sent to default origin for auth token forwarding. | Optional; if set, token env var is required |
-| `defaultPathReplacement` | Rewrites default/page path before forwarding to default origin.         | No       |
-| `defaultCacheKey`       | Page cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`). | Yes      |
+| Key                       | Purpose                                                                                  | Required                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `cacheTagsHeader`         | Response header name read from origin to persist cache tags in records.                  | No                                                                         |
+| `apiPathPrefix`           | URL substring used to classify requests as API traffic.                                  | Conditional: required if `apiOrigin` is set and `apiHeader` is not set     |
+| `apiHeader`               | Header-based API classifier object (`key` + `value`).                                    | Conditional: required if `apiOrigin` is set and `apiPathPrefix` is not set |
+| `apiPathReplacement`      | Rewrites incoming API path before forwarding to API origin.                              | No                                                                         |
+| `apiOrigin`               | API origin base URL string (e.g. `https://api.example.com`).                             | No                                                                         |
+| `apiOriginAuthHeader`     | Optional header name sent to API origin for auth token forwarding.                       | Optional; if set, token env var is required                                |
+| `apiCacheKey`             | API cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`).  | Conditional: required if `apiOrigin` is set                                |
+| `defaultOrigin`           | Default/page origin base URL string (e.g. `https://www.example.com`).                    | Yes                                                                        |
+| `defaultOriginAuthHeader` | Optional header name sent to default origin for auth token forwarding.                   | Optional; if set, token env var is required                                |
+| `defaultPathReplacement`  | Rewrites default/page path before forwarding to default origin.                          | No                                                                         |
+| `defaultCacheKey`         | Page cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`). | Yes                                                                        |
 
 If `apiOriginAuthHeader` is set, provide one of:
 
@@ -330,19 +384,27 @@ Expected behavior:
 }
 ```
 
-### `type: api` or `type: page`
+### `type: api` or `type: page` (soft invalidation)
 
-- Writes a timestamp into `CacheInvalidation.timestamps`.
-- Cache records with `refreshedAt < timestamp` are treated as invalid.
-- If `groupCode` is provided, timestamp is stored by group key instead of global type key.
+- Does not delete cache rows.
+- Writes an invalidation timestamp into `CacheInvalidation.timestamps`.
+- The app subscribes to this table and keeps the latest timestamps in memory.
+- Any cache record with `refreshedAt < timestamp` is treated as expired on read.
+- If `groupCode` is provided, the timestamp is stored by `groupCode` instead of global `api`/`page` key.
+- This model reduces write volume for mass invalidation because it avoids record-by-record deletes.
 
-### `type: cacheTag`
+### `type: cacheTag` (hard invalidation)
 
-- Deletes records in both cache tables matching `cacheTags contains <tag>`.
+- Immediately deletes records in both cache tables matching `cacheTags contains <tag>`.
 
-### `type: url`
+### `type: url` (hard invalidation)
 
-- Deletes records in both cache tables matching `url == <url>`.
+- Immediately deletes records in both cache tables matching `url == <url>`.
+
+### Individual record deletion by cache key
+
+- You can directly delete a single cache row by `cacheKey` using Harper Operations API `delete`.
+- Operations API reference: [Delete (NoSQL)](https://docs.harperdb.io/docs/developers/operations-api/nosql-operations#delete)
 
 ## Headers and Observability
 
@@ -446,12 +508,24 @@ export HDB_ADMIN_USERNAME=HDB_ADMIN
 export HDB_ADMIN_PASSWORD=password
 ```
 
-When running Harper locally (separate shell), use mocked origin overrides:
+The integration tests expect Harper to be configured with `cacheConfiguration.integration.json`, which points mock origins to `172.17.0.1:4101` (default) and `172.17.0.1:4102`. Set `ENVIRONMENT=integration` in the shell where Harper is running:
 
 ```bash
-export CACHE_DEFAULT_ORIGIN_OVERRIDE=http://127.0.0.1:4101
-export CACHE_API_ORIGIN_OVERRIDE=http://127.0.0.1:4102
+# Shell running Harper
+export ENVIRONMENT=integration
+harperdb run .
 ```
+
+The mock origin host and port are configurable via env vars in the test shell if your network differs from the defaults (e.g. non-Docker local setups):
+
+```bash
+# Shell running tests — override if mock origins are not on 172.17.0.1
+export MOCK_ORIGIN_HOST=127.0.0.1
+export MOCK_DEFAULT_ORIGIN_PORT=4101
+export MOCK_API_ORIGIN_PORT=4102
+```
+
+If you need a fully local setup with different origin URLs, create a `cacheConfiguration.local.json` pointing to your local mock addresses and run Harper with `ENVIRONMENT=local` (or unset).
 
 See `tests/integration/README.md` for the full local two-terminal setup.
 

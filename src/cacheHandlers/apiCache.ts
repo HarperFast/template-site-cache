@@ -6,13 +6,7 @@ import {
 	cacheGetObservabilityHeaders,
 } from '../util/headers.js';
 import { classifyRequest, headerToCacheTags, isInvalidated } from '../util/cache.js';
-import {
-	METHODS_WITH_BODY,
-	NO_BODY_RESPONSES,
-	CACHE_CONFIG,
-	resolveConfiguredOrigin,
-	resolveOriginAuthHeader,
-} from '../constants/index.js';
+import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, resolveOriginAuthHeader } from '../constants/index.js';
 import { buildAPICacheKey } from '../util/cacheKeys.js';
 import type { IncomingMessage } from 'http';
 import { fetchFromOrigin } from '../util/originClient.js';
@@ -95,13 +89,12 @@ const fetchFromCache = async (
 	// prepare downstream headers/body
 	const downstreamHeaders = buildDownstreamHeaders(upstreamResp.headers);
 
-	// Read body once so we can build two Responses (one to return, one to cache)
-	const bodyBuf = Buffer.from(await upstreamResp.arrayBuffer());
-
 	const ttlConfig = classifyRequest(request, cacheKey);
 	const shouldCache = upstreamResp.status === 200 && ttlConfig?.ruleId;
 
 	const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
+
+	let streamForClient = upstreamResp.body;
 
 	if (shouldCache) {
 		let expiresAt: number | undefined = Date.now() + ttlConfig.ttlSeconds * 1000;
@@ -116,23 +109,29 @@ const fetchFromCache = async (
 			Array.from(downstreamHeaders.entries()).filter(([k]) => k.toLowerCase() !== 'set-cookie')
 		);
 
-		if (bodyBuf.length) {
-			const blob = await createBlob(bodyBuf);
-			await CacheContentTable.put(
-				cacheKey,
-				{
-					data: blob,
-					headers: JSON.stringify(headersForCache),
-					debugHeaders: JSON.stringify(debugHeaders),
-					groupCode: ttlConfig.groupCode,
-					refreshedAt: Date.now(),
-					cacheTags: headerToCacheTags(new Headers(headersForCache)),
-					url: url.href,
-				},
-				{
-					expiresAt,
+		if (upstreamResp.body) {
+			const [cacheStream, responseStream] = upstreamResp.body.tee();
+			streamForClient = responseStream;
+
+			const saveToCache = async () => {
+				const blob = await createBlob(cacheStream);
+				if (blob) {
+					await CacheContentTable.put(
+						cacheKey,
+						{
+							data: blob,
+							headers: JSON.stringify(headersForCache),
+							debugHeaders: JSON.stringify(debugHeaders),
+							groupCode: ttlConfig.groupCode,
+							refreshedAt: Date.now(),
+							cacheTags: headerToCacheTags(new Headers(headersForCache)),
+							url: url.href,
+						},
+						{ expiresAt }
+					);
 				}
-			);
+			};
+			saveToCache().catch((err) => console.error('Error saving API cache', cacheKey, err));
 		}
 	}
 
@@ -140,7 +139,7 @@ const fetchFromCache = async (
 		Object.entries(debugHeaders).forEach(([k, v]) => downstreamHeaders.set(k, v));
 	}
 
-	const body = !NO_BODY_RESPONSES.has(upstreamResp.status) ? bodyBuf : null;
+	const body = !NO_BODY_RESPONSES.has(upstreamResp.status) ? streamForClient : null;
 
 	downstreamHeaders.set('x-hdb-cache', shouldCache ? 'miss' : 'no-cache');
 
@@ -157,7 +156,7 @@ const fetchFromCache = async (
 
 export const handleAPI = async (request: IncomingMessage, cacheInvalidations: Record<string, number>) => {
 	const startTime = performance.now();
-	const origin = resolveConfiguredOrigin('apiOrigin');
+	const origin = CACHE_CONFIG.apiOrigin;
 
 	let url = new URL(request.url!, origin);
 	if (CACHE_CONFIG.apiPathReplacement) {
