@@ -303,8 +303,6 @@ ENVIRONMENT=prod
 }
 ```
 
-Note: `apiOrigin` and `defaultOrigin` are plain URL strings — there is no per-environment nesting inside the file. Environment selection is done entirely by which file is loaded.
-
 ### Field-by-field behavior
 
 | Key                       | Purpose                                                                                  | Required                                                                   |
@@ -341,8 +339,8 @@ The module exports:
 Path mapping depends on Harper resource export conventions in your deployment.
 With default nested-export routing, this is typically:
 
-- `POST /cache/config`
-- `PUT /cache/config/:id`
+- `POST /cache/ttlConfig`
+- `PUT /cache/ttlConfig/:id`
 - `POST /cache/invalidate`
 
 ### `cache.config` request body
@@ -503,7 +501,7 @@ npm run test:integration
 Minimum local environment (in the shell running tests):
 
 ```bash
-export TEST_DOMAIN=https://localhost:9926
+export TEST_DOMAIN=http://localhost:9926
 export HDB_ADMIN_USERNAME=HDB_ADMIN
 export HDB_ADMIN_PASSWORD=password
 ```
