@@ -319,12 +319,12 @@ ENVIRONMENT=prod
 | `defaultPathReplacement`  | Rewrites default/page path before forwarding to default origin.                          | No                                                                         |
 | `defaultCacheKey`         | Page cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`). | Yes                                                                        |
 
-If `apiOriginAuthHeader` is set, provide one of:
+If `apiOriginAuthHeader` is set, provide one of as an env var:
 
 - `HDB_API_ORIGIN_AUTH_TOKEN`
 - `API_ORIGIN_AUTH_TOKEN`
 
-If `defaultOriginAuthHeader` is set, provide one of:
+If `defaultOriginAuthHeader` is set, provide one of as an env var:
 
 - `HDB_DEFAULT_ORIGIN_AUTH_TOKEN`
 - `DEFAULT_ORIGIN_AUTH_TOKEN`

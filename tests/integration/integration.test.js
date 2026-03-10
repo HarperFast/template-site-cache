@@ -198,8 +198,8 @@ const startAPIOrigin = async () => {
 
 const harperRequest = async (pathname, init = {}) => {
 	const headers = new Headers(init.headers || {});
-	if (!headers.has('x-hdb-authorization')) {
-		headers.set('x-hdb-authorization', authHeader);
+	if (!headers.has('authorization')) {
+		headers.set('authorization', authHeader);
 	}
 
 	return fetch(`${TEST_DOMAIN}${pathname}`, {
