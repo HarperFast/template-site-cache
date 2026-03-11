@@ -52,7 +52,7 @@ Incoming traffic is processed by `server.http(...)`:
 - Reserved paths bypass cache routing:
   - `/status`
   - `/prometheus_exporter/metrics`
-  - `/cache/config`
+  - `/cache/ttlConfig`
   - `/cache/invalidate`
 - Other requests are authenticated using `x-hdb-authorization` (Basic auth).
 - Requests are classified as API traffic when either condition matches:
@@ -129,16 +129,16 @@ Supported rule policies in runtime:
 - Duration policy: numeric duration converted to seconds.
 - `origin_expires`: use upstream `Expires` semantics.
 - `never`: no expiration timestamp is set.
+- `no_cache`: explicitly disallow caching
 
 Validation on the admin resource currently accepts:
 
 - Durations: `1m`, `6h`, `1d`, `1y` (pattern: integer + `m|h|d|y`)
-- Specials: `origin_expires`, `never`
+- Specials: `origin_expires`, `never`, `no_cache`
 
 Note:
 
 - If no TTL rule matches, the request is treated as non-cacheable by default.
-- The starter README references `never_expire` and `no_cache`; current source code uses `never` and does not include `no_cache` as a rule policy.
 
 ### Additional match criteria
 
@@ -303,8 +303,6 @@ ENVIRONMENT=prod
 }
 ```
 
-Note: `apiOrigin` and `defaultOrigin` are plain URL strings — there is no per-environment nesting inside the file. Environment selection is done entirely by which file is loaded.
-
 ### Field-by-field behavior
 
 | Key                       | Purpose                                                                                  | Required                                                                   |
@@ -321,12 +319,12 @@ Note: `apiOrigin` and `defaultOrigin` are plain URL strings — there is no per-
 | `defaultPathReplacement`  | Rewrites default/page path before forwarding to default origin.                          | No                                                                         |
 | `defaultCacheKey`         | Page cache key config object (`includeHeaders`, `includeQueryParams`, `includeCookies`). | Yes                                                                        |
 
-If `apiOriginAuthHeader` is set, provide one of:
+If `apiOriginAuthHeader` is set, provide one of as an env var:
 
 - `HDB_API_ORIGIN_AUTH_TOKEN`
 - `API_ORIGIN_AUTH_TOKEN`
 
-If `defaultOriginAuthHeader` is set, provide one of:
+If `defaultOriginAuthHeader` is set, provide one of as an env var:
 
 - `HDB_DEFAULT_ORIGIN_AUTH_TOKEN`
 - `DEFAULT_ORIGIN_AUTH_TOKEN`
@@ -335,17 +333,16 @@ If `defaultOriginAuthHeader` is set, provide one of:
 
 The module exports:
 
-- `cache.config` for TTL rule writes
+- `cache.ttlConfig` for TTL rule writes
 - `cache.invalidate` for cache invalidation operations
 
-Path mapping depends on Harper resource export conventions in your deployment.
-With default nested-export routing, this is typically:
+Path mapping for exported Resources:
 
-- `POST /cache/config`
-- `PUT /cache/config/:id`
+- `POST /cache/ttlConfig`
+- `PUT /cache/ttlConfig/:id`
 - `POST /cache/invalidate`
 
-### `cache.config` request body
+### Sample `cache.ttlConfig` request body
 
 ```json
 {
@@ -380,7 +377,8 @@ Expected behavior:
 	"type": "api | page | cacheTag | url",
 	"groupCode": "optional-group",
 	"cacheTag": "required-when-type-cacheTag",
-	"url": "required-when-type-url"
+	"url": "required-when-type-url",
+	"runAsync": false
 }
 ```
 
@@ -390,16 +388,19 @@ Expected behavior:
 - Writes an invalidation timestamp into `CacheInvalidation.timestamps`.
 - The app subscribes to this table and keeps the latest timestamps in memory.
 - Any cache record with `refreshedAt < timestamp` is treated as expired on read.
-- If `groupCode` is provided, the timestamp is stored by `groupCode` instead of global `api`/`page` key.
+- If `groupCode` is provided, the timestamp is stored by `groupCode` instead of global `api`/`page` key, Invalidating only records with matching group code within the default or api cache.
 - This model reduces write volume for mass invalidation because it avoids record-by-record deletes.
 
 ### `type: cacheTag` (hard invalidation)
 
 - Immediately deletes records in both cache tables matching `cacheTags contains <tag>`.
+- **Note:** this requires a scan of the relevant cache table(s) to find matching records, which can be expensive at scale.
+- Set `runAsync: true` to return a `202 Accepted` immediately and run the deletes in the background.
 
 ### `type: url` (hard invalidation)
 
 - Immediately deletes records in both cache tables matching `url == <url>`.
+- Set `runAsync: true` to return a `202 Accepted` immediately and run the deletes in the background.
 
 ### Individual record deletion by cache key
 
@@ -434,7 +435,7 @@ Expected behavior:
 
 For non-reserved paths, the interceptor reads:
 
-- `x-hdb-authorization: Basic <base64(username:password)>`
+- `authorization: Basic <base64(username:password)>`
 
 Then calls `server.authenticateUser(username, password)`.
 
@@ -445,8 +446,23 @@ HDB_ADMIN:password -> Basic SERCX0FETUlOOnBhc3N3b3Jk
 ```
 
 ```http
-x-hdb-authorization: Basic SERCX0FETUlOOnBhc3N3b3Jk
+authorization: Basic SERCX0FETUlOOnBhc3N3b3Jk
 ```
+
+### Required roles
+
+The component enforces role-based access via `ALLOWED_ROLES`:
+
+```ts
+ALLOWED_ROLES = ['cache_user', 'super_user'];
+```
+
+Requests authenticated with a user that does not hold one of these roles will be rejected. To grant access to a user:
+
+1. Create the user in Harper with the appropriate role, or assign an existing user the `cache_user` or `super_user` role.
+2. Harper's built-in `super_user` role has full access. For restricted access, use `cache_user`.
+
+See [Configuring Roles](https://docs.harperdb.io/docs/reference/roles#configuring-roles) in the Harper documentation for how to create and assign custom roles.
 
 ## Run and Deploy
 
@@ -503,12 +519,12 @@ npm run test:integration
 Minimum local environment (in the shell running tests):
 
 ```bash
-export TEST_DOMAIN=https://localhost:9926
+export TEST_DOMAIN=http://localhost:9926
 export HDB_ADMIN_USERNAME=HDB_ADMIN
 export HDB_ADMIN_PASSWORD=password
 ```
 
-The integration tests expect Harper to be configured with `cacheConfiguration.integration.json`, which points mock origins to `172.17.0.1:4101` (default) and `172.17.0.1:4102`. Set `ENVIRONMENT=integration` in the shell where Harper is running:
+Harper must be running with `ENVIRONMENT=integration` (loads `cacheConfiguration.integration.json`):
 
 ```bash
 # Shell running Harper
@@ -519,7 +535,7 @@ harperdb run .
 The mock origin host and port are configurable via env vars in the test shell if your network differs from the defaults (e.g. non-Docker local setups):
 
 ```bash
-# Shell running tests — override if mock origins are not on 172.17.0.1
+# Shell running tests — override if mock origins are not on the default addresses
 export MOCK_ORIGIN_HOST=127.0.0.1
 export MOCK_DEFAULT_ORIGIN_PORT=4101
 export MOCK_API_ORIGIN_PORT=4102

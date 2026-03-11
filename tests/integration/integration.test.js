@@ -3,12 +3,12 @@ import { after, before, describe, test } from 'node:test';
 import { createServer } from 'node:http';
 import { Agent, fetch } from 'undici';
 
-const TEST_DOMAIN = process.env.TEST_DOMAIN || 'http://localhost:9926';
+const TEST_DOMAIN = process.env.TEST_DOMAIN || 'https://localhost:9926';
 const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925';
 const REQUEST_TIMEOUT_MS = Number(process.env.INTEGRATION_TIMEOUT_MS || '90000');
 
 const MOCK_BIND_HOST = process.env.MOCK_ORIGIN_BIND_HOST || '0.0.0.0';
-const MOCK_ORIGIN_HOST = process.env.MOCK_ORIGIN_HOST || '172.17.0.1';
+const MOCK_ORIGIN_HOST = process.env.MOCK_ORIGIN_HOST || 'host.docker.internal';
 const MOCK_DEFAULT_ORIGIN_PORT = Number(process.env.MOCK_DEFAULT_ORIGIN_PORT || '4101');
 const MOCK_API_ORIGIN_PORT = Number(process.env.MOCK_API_ORIGIN_PORT || '4102');
 
@@ -39,6 +39,7 @@ const harperOpsRequest = (body) =>
 		method: 'POST',
 		headers: {
 			'content-type': 'application/json',
+			'Authorization': authHeader,
 		},
 		body: JSON.stringify(body),
 		dispatcher: insecureAgent,
@@ -197,8 +198,8 @@ const startAPIOrigin = async () => {
 
 const harperRequest = async (pathname, init = {}) => {
 	const headers = new Headers(init.headers || {});
-	if (!headers.has('x-hdb-authorization')) {
-		headers.set('x-hdb-authorization', authHeader);
+	if (!headers.has('authorization')) {
+		headers.set('authorization', authHeader);
 	}
 
 	return fetch(`${TEST_DOMAIN}${pathname}`, {
@@ -208,8 +209,8 @@ const harperRequest = async (pathname, init = {}) => {
 	});
 };
 
-const callJSONResource = async (paths, body, expectedStatuses) => {
-	for (const resourcePath of paths) {
+const callJSONResource = async (resourcePath, body, expectedStatuses) => {
+	try {
 		const response = await harperRequest(resourcePath, {
 			method: 'POST',
 			headers: {
@@ -218,29 +219,28 @@ const callJSONResource = async (paths, body, expectedStatuses) => {
 			body: JSON.stringify(body),
 		});
 
-		if (response.status === 404) continue;
-
 		const responseText = await response.text();
+
 		assert.ok(
 			expectedStatuses.includes(response.status),
 			`${resourcePath} returned ${response.status}. Body: ${responseText}`
 		);
-		return;
+	} catch (e) {
+		console.log(e);
+		throw new Error(`Error calling ${resourcePath}: ${e.message}`);
 	}
-
-	throw new Error(`None of the resource routes were available: ${paths.join(', ')}`);
 };
 
 const createTTLRule = async (rule) => {
-	await callJSONResource(['/cache/ttlConfig'], rule, [200, 201, 204]);
+	await callJSONResource('/cache/ttlConfig', rule, [200, 201, 204]);
 };
 
 const invalidateByType = async (type) => {
-	await callJSONResource(['/cache/invalidate'], { type }, [200]);
+	await callJSONResource('/cache/invalidate', { type }, [200]);
 };
 
 const invalidateByCacheTag = async (cacheTag) => {
-	await callJSONResource(['/cache/invalidate'], { type: 'cacheTag', cacheTag }, [200]);
+	await callJSONResource('/cache/invalidate', { type: 'cacheTag', cacheTag }, [200]);
 };
 
 const waitForCacheState = async (requestPath, headers, expectedState, failureHint) => {

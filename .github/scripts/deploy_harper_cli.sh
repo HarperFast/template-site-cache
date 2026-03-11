@@ -22,6 +22,13 @@ echo "Deploying Harper component to target: $TARGET"
 # Deploy component to docker
 export CLI_TARGET_USERNAME="$HDB_ADMIN_USERNAME"
 export CLI_TARGET_PASSWORD="$HDB_ADMIN_PASSWORD"
+
+echo "Contents of config file:"
+cat config.yaml
+
+echo "Contents of dist dir"
+ls -la dist/
+
 harperdb deploy target=$TARGET replicated=$REPLICATED restart=$RESTART
 
 # Wait for the container to be ready after restart

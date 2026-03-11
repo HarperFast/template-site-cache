@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      ENVIRONMENT: stage
+      ENVIRONMENT: integration
 
     steps:
       - name: Checkout repository

@@ -9,14 +9,14 @@
 		"search": "/api/",
 		"replace": ""
 	},
-	"apiOrigin": "http://172.17.0.1:4102",
+	"apiOrigin": "http://host.docker.internal:4102",
 	"apiOriginAuthHeader": "",
 	"apiCacheKey": {
 		"includeHeaders": ["accept", "origin", "version"],
 		"includeQueryParams": "ALL",
 		"includeCookies": []
 	},
-	"defaultOrigin": "http://172.17.0.1:4101",
+	"defaultOrigin": "http://host.docker.internal:4101",
 	"defaultOriginAuthHeader": "",
 	"defaultPathReplacement": false,
 	"defaultCacheKey": {

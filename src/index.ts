@@ -3,7 +3,8 @@ import { handleDefault } from './cacheHandlers/defaultCache.js';
 import { TTLRules } from './resources/ttlRules.js';
 import { Invalidate } from './resources/cacheInvalidation.js';
 import type { CacheInvalidation } from './types/graphql.js';
-import { RESERVED_PATHS, CACHE_INVALIDATIONM_KEY, CACHE_CONFIG } from './constants/index.js';
+import { RESERVED_PATHS, CACHE_INVALIDATIONM_KEY, CACHE_CONFIG, ALLOWED_ROLES } from './constants/index.js';
+import { decodeAuthHeader } from './util/auth.js';
 
 export const cache = { ttlConfig: TTLRules, invalidate: Invalidate };
 
@@ -15,13 +16,13 @@ server.http(
 			return next(request);
 		}
 
-		// const auth = request.headers.get('x-hdb-authorization');
-		// const { username, password } = decodeAuthHeader(auth);
-		// const user = await server.authenticateUser(username, password);
+		const auth = request.headers.get('authorization');
+		const { username, password } = decodeAuthHeader(auth);
+		const user = await server.authenticateUser(username, password);
 
-		// if (ALLOWED_ROLES.includes(user.role)) {
-		// 	return new Response('Unauthorized', { status: 403 });
-		// }
+		if (!ALLOWED_ROLES.includes(user.role.role)) {
+			return new Response('Unauthorized', { status: 403 });
+		}
 
 		const apiHeaderKey = CACHE_CONFIG.apiHeader?.key ?? '';
 		const apiHeader = request.headers.get(apiHeaderKey) ?? request.headers.get(apiHeaderKey.toLowerCase());
