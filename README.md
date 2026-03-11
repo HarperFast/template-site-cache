@@ -333,17 +333,16 @@ If `defaultOriginAuthHeader` is set, provide one of as an env var:
 
 The module exports:
 
-- `cache.config` for TTL rule writes
+- `cache.ttlConfig` for TTL rule writes
 - `cache.invalidate` for cache invalidation operations
 
-Path mapping depends on Harper resource export conventions in your deployment.
-With default nested-export routing, this is typically:
+Path mapping for exported Resources:
 
 - `POST /cache/ttlConfig`
 - `PUT /cache/ttlConfig/:id`
 - `POST /cache/invalidate`
 
-### `cache.config` request body
+### Sample `cache.ttlConfig` request body
 
 ```json
 {
@@ -378,7 +377,8 @@ Expected behavior:
 	"type": "api | page | cacheTag | url",
 	"groupCode": "optional-group",
 	"cacheTag": "required-when-type-cacheTag",
-	"url": "required-when-type-url"
+	"url": "required-when-type-url",
+	"runAsync": false
 }
 ```
 
@@ -388,16 +388,19 @@ Expected behavior:
 - Writes an invalidation timestamp into `CacheInvalidation.timestamps`.
 - The app subscribes to this table and keeps the latest timestamps in memory.
 - Any cache record with `refreshedAt < timestamp` is treated as expired on read.
-- If `groupCode` is provided, the timestamp is stored by `groupCode` instead of global `api`/`page` key.
+- If `groupCode` is provided, the timestamp is stored by `groupCode` instead of global `api`/`page` key, Invalidating only records with matching group code within the default or api cache.
 - This model reduces write volume for mass invalidation because it avoids record-by-record deletes.
 
 ### `type: cacheTag` (hard invalidation)
 
 - Immediately deletes records in both cache tables matching `cacheTags contains <tag>`.
+- **Note:** this requires a scan of the relevant cache table(s) to find matching records, which can be expensive at scale.
+- Set `runAsync: true` to return a `202 Accepted` immediately and run the deletes in the background.
 
 ### `type: url` (hard invalidation)
 
 - Immediately deletes records in both cache tables matching `url == <url>`.
+- Set `runAsync: true` to return a `202 Accepted` immediately and run the deletes in the background.
 
 ### Individual record deletion by cache key
 
@@ -521,7 +524,7 @@ export HDB_ADMIN_USERNAME=HDB_ADMIN
 export HDB_ADMIN_PASSWORD=password
 ```
 
-The integration tests expect Harper to be configured with `cacheConfiguration.integration.json`, which points mock origins to `172.17.0.1:4101` (default) and `172.17.0.1:4102`. Set `ENVIRONMENT=integration` in the shell where Harper is running:
+Harper must be running with `ENVIRONMENT=integration` (loads `cacheConfiguration.integration.json`):
 
 ```bash
 # Shell running Harper
@@ -532,7 +535,7 @@ harperdb run .
 The mock origin host and port are configurable via env vars in the test shell if your network differs from the defaults (e.g. non-Docker local setups):
 
 ```bash
-# Shell running tests — override if mock origins are not on 172.17.0.1
+# Shell running tests — override if mock origins are not on the default addresses
 export MOCK_ORIGIN_HOST=127.0.0.1
 export MOCK_DEFAULT_ORIGIN_PORT=4101
 export MOCK_API_ORIGIN_PORT=4102

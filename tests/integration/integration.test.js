@@ -8,7 +8,7 @@ const OPERATIONS_URL = process.env.HDB_OPERATIONS_URL || 'http://localhost:9925'
 const REQUEST_TIMEOUT_MS = Number(process.env.INTEGRATION_TIMEOUT_MS || '90000');
 
 const MOCK_BIND_HOST = process.env.MOCK_ORIGIN_BIND_HOST || '0.0.0.0';
-const MOCK_ORIGIN_HOST = process.env.MOCK_ORIGIN_HOST || '172.17.0.1';
+const MOCK_ORIGIN_HOST = process.env.MOCK_ORIGIN_HOST || 'host.docker.internal';
 const MOCK_DEFAULT_ORIGIN_PORT = Number(process.env.MOCK_DEFAULT_ORIGIN_PORT || '4101');
 const MOCK_API_ORIGIN_PORT = Number(process.env.MOCK_API_ORIGIN_PORT || '4102');
 
@@ -218,9 +218,9 @@ const callJSONResource = async (resourcePath, body, expectedStatuses) => {
 			},
 			body: JSON.stringify(body),
 		});
-	
+
 		const responseText = await response.text();
-	
+
 		assert.ok(
 			expectedStatuses.includes(response.status),
 			`${resourcePath} returned ${response.status}. Body: ${responseText}`

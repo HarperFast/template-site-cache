@@ -5,6 +5,7 @@ export interface CacheInvalidationRequest {
 	cacheTag?: string;
 	url?: string;
 	groupCode?: string;
+	runAsync?: boolean;
 }
 
 export interface TTLRuleMatchConditions {

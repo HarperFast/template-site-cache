@@ -51,10 +51,22 @@ export class Invalidate extends Resource {
 		}
 
 		if (type === 'cacheTag') {
+			if (!body.cacheTag) return { status: 400, data: 'cacheTag must not be empty' };
+			if (body.runAsync) {
+				handleCacheTagRecordDeletion(body.cacheTag).catch((err) =>
+					logger.error('Async cacheTag invalidation failed', body.cacheTag, err)
+				);
+				return { status: 202, data: `Async deletion of records with cacheTag "${body.cacheTag}" started.` };
+			}
 			const [status, msg] = await handleCacheTagRecordDeletion(body.cacheTag);
 			return { status: status, data: msg };
 		}
 		if (type === 'url') {
+			if (!body.url) return { status: 400, data: 'url must not be empty' };
+			if (body.runAsync) {
+				handleUrlRecordDeletion(body.url).catch((err) => logger.error('Async url invalidation failed', body.url, err));
+				return { status: 202, data: `Async deletion of records with url "${body.url}" started.` };
+			}
 			const [status, msg] = await handleUrlRecordDeletion(body.url);
 			return { status: status, data: msg };
 		}
