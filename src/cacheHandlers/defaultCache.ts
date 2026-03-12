@@ -35,19 +35,19 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 	}
 
 	const response = await fetchFromOrigin(url, { method: 'GET', headers: upstreamHeaders }); // Fetch the page content
+	const responseHeaderObj = buildDownstreamHeaders(response.headers);
 
 	// dont cache an unsuccessful response from origin
 	if (!response.ok) {
-		logger.warn('Skipped caching for: ', path);
+		logger.info('Skipped caching for: ', path);
 		server.recordAnalytics(performance.now() - startTime, 'http-no-cache', 'PageCache');
 		return new Response(response.body, {
 			status: response.status,
 			statusText: response.statusText,
-			headers: { 'content-type': 'text/html' },
+			headers: responseHeaderObj,
 		});
 	}
 
-	const responseHeaderObj = buildDownstreamHeaders(response.headers);
 	let streamForClient = response.body;
 
 	const shouldCache = !!ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
