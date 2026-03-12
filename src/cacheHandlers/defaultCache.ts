@@ -56,21 +56,18 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 	if (shouldCache) {
 		const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
 
+		// FIXME: consitent request.headers access
 		if (request.headers.get('x-hdb-cache-debug')) {
 			Object.entries(debugHeaders).forEach(([k, v]) => responseHeaderObj.set(k, v));
 		}
 
 		let expiresAt: number | undefined = Date.now() + ttlConfig.ttlSeconds * 1000;
 		if (ttlConfig.policy === SPECIAL_TTL.ORIGIN) {
-			const expires = responseHeaderObj.get('expires');
-			if (expires) expiresAt = new Date(expires).getTime();
-			else expiresAt = undefined;
+			const originExpires = downstreamHeaders.get('expires')!;
+			expiresAt = originExpires ? new Date(originExpires).getTime() : undefined;
 		} else if (ttlConfig.policy === SPECIAL_TTL.NEVER) {
 			expiresAt = undefined;
 		}
-
-		const cacheHeaders = new Headers(responseHeaderObj);
-		cacheHeaders.delete('set-cookie');
 
 		if (response.body) {
 			const [cacheStream, responseStream] = response.body.tee();
@@ -83,11 +80,11 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 						cacheKey,
 						{
 							data: blob,
-							headers: JSON.stringify(Object.fromEntries(cacheHeaders.entries())),
+							headers: JSON.stringify(Object.fromEntries(responseHeaderObj.entries())),
 							debugHeaders: JSON.stringify(debugHeaders),
 							groupCode: ttlConfig.groupCode,
 							refreshedAt: Date.now(),
-							cacheTags: headerToCacheTags(cacheHeaders),
+							cacheTags: headerToCacheTags(responseHeaderObj),
 							url: url.href,
 						},
 						{ expiresAt }

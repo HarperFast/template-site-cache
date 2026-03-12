@@ -48,7 +48,7 @@ const readRequestBody = async (request: any) => {
 	}
 };
 
-const fetchFromCache = async (
+const fetchWithCache = async (
 	request: IncomingMessage,
 	url: URL,
 	upstreamHeaders: IncomingHttpHeaders,
@@ -83,7 +83,7 @@ const fetchFromCache = async (
 	}
 
 	// 2) Miss → fetch from origin
-	const init = { method: 'GET', headers: upstreamHeaders };
+	const init = { headers: upstreamHeaders };
 	const upstreamResp = await fetchFromOrigin(url, init);
 
 	// prepare downstream headers/body
@@ -100,7 +100,7 @@ const fetchFromCache = async (
 		let expiresAt: number | undefined = Date.now() + ttlConfig.ttlSeconds * 1000;
 		if (ttlConfig.policy === SPECIAL_TTL.ORIGIN) {
 			const originExpires = downstreamHeaders.get('expires')!;
-			expiresAt = new Date(originExpires).getTime();
+			expiresAt = originExpires ? new Date(originExpires).getTime() : undefined;
 		} else if (ttlConfig.policy === SPECIAL_TTL.NEVER) {
 			expiresAt = undefined;
 		}
@@ -176,7 +176,7 @@ export const handleAPI = async (request: IncomingMessage, cacheInvalidations: Re
 
 	// ---------- GET: try cache ----------
 	if (method === 'GET' && request.headers['x-harper-cache-bypass'] !== 'true') {
-		return fetchFromCache(request, url, upstreamHeaders, cacheInvalidations, startTime);
+		return fetchWithCache(request, url, upstreamHeaders, cacheInvalidations, startTime);
 	}
 
 	// ---------- proxy (no caching) ----------

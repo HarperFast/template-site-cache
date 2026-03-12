@@ -3,7 +3,7 @@ import { handleDefault } from './cacheHandlers/defaultCache.js';
 import { TTLRules } from './resources/ttlRules.js';
 import { Invalidate } from './resources/cacheInvalidation.js';
 import type { CacheInvalidation } from './types/graphql.js';
-import { RESERVED_PATHS, CACHE_INVALIDATIONM_KEY, CACHE_CONFIG, ALLOWED_ROLES } from './constants/index.js';
+import { RESERVED_PATHS, CACHE_INVALIDATION_KEY, CACHE_CONFIG, ALLOWED_ROLES } from './constants/index.js';
 import { decodeAuthHeader } from './util/auth.js';
 
 export const cache = { ttlConfig: TTLRules, invalidate: Invalidate };
@@ -45,12 +45,12 @@ const initializeCacheInvalidationSubscription = async () => {
 	};
 
 	try {
-		const currentInvalidations = await CacheInvalidationTable.get(CACHE_INVALIDATIONM_KEY);
+		const currentInvalidations = await CacheInvalidationTable.get(CACHE_INVALIDATION_KEY);
 		setCacheInvalidations(currentInvalidations?.timestamps);
 
 		const subscription = await CacheInvalidationTable.subscribe({ omitCurrent: true });
 		subscription.on('data', (event: { id: number; type: string; value?: CacheInvalidation }) => {
-			if (event.id !== CACHE_INVALIDATIONM_KEY) return;
+			if (event.id !== CACHE_INVALIDATION_KEY) return;
 			setCacheInvalidations(event.value?.timestamps);
 		});
 

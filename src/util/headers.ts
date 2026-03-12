@@ -27,6 +27,7 @@ export const buildDownstreamHeaders = (upstreamHeaders: any) => {
 	for (const k of [...out.keys()]) {
 		if (HOP_BY_HOP.has(k.toLowerCase())) out.delete(k);
 	}
+	out.delete('set-cookie');
 	out.delete('accept-encoding');
 	out.delete('content-length');
 	out.set('x-hdb', 'true');

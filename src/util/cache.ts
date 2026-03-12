@@ -341,13 +341,13 @@ const applyOperator = (op: string, received: string | null, searchList?: string 
 		case CONDITION_OPERATOR.CONTAINS: {
 			if (!gotExists) return false;
 			if (!searchList || searchList.length === 0) return false;
-			return searchList.includes(received);
+			return searchList.some((s) => received.includes(s));
 		}
 
 		case CONDITION_OPERATOR.NOT_CONTAINS: {
 			if (!searchList || searchList.length === 0) return true;
 			if (!gotExists) return true;
-			return !searchList.includes(received);
+			return !searchList.some((s) => received.includes(s));
 		}
 
 		default:

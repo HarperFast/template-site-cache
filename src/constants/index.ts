@@ -6,7 +6,7 @@ export const KEY_OVERFLOW = 1000; // max key size before hashing
 export const NO_BODY_RESPONSES = new Set([204, 304]); // HTTP status codes that must not have a body
 export const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 export const ALLOWED_ROLES = ['cache_user', 'super_user'];
-export const CACHE_INVALIDATIONM_KEY = 1; // Primary key for cache invalidation record in the database
+export const CACHE_INVALIDATION_KEY = 1; // Primary key for cache invalidation record in the database
 
 type OriginTarget = 'defaultOrigin' | 'apiOrigin';
 
