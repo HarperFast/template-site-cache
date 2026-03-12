@@ -3,10 +3,10 @@ import { SPECIAL_TTL } from '../resources/ttlRules.js';
 import { classifyRequest, headerToCacheTags, isInvalidated } from '../util/cache.js';
 import { buildPageCacheKey } from '../util/cacheKeys.js';
 import {
+	buildDownstreamHeaders,
 	buildUpstreamHeaders,
 	cacheGetObservabilityHeaders,
 	cachePutObservabilityHeaders,
-	normalizeHeaders,
 } from '../util/headers.js';
 import { CACHE_CONFIG, resolveOriginAuthHeader } from '../constants/index.js';
 import type { IncomingMessage } from 'http';
@@ -47,8 +47,7 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 		});
 	}
 
-	const normalizedHeaders = normalizeHeaders(response.headers);
-	const responseHeaderObj = new Headers(normalizedHeaders);
+	const responseHeaderObj = buildDownstreamHeaders(response.headers);
 	let streamForClient = response.body;
 
 	const shouldCache = !!ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
@@ -70,7 +69,7 @@ const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMat
 			expiresAt = undefined;
 		}
 
-		const cacheHeaders = new Headers(normalizedHeaders);
+		const cacheHeaders = new Headers(responseHeaderObj);
 		cacheHeaders.delete('set-cookie');
 
 		if (response.body) {

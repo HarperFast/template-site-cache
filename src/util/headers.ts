@@ -1,35 +1,8 @@
 import type { IncomingHttpHeaders, IncomingMessage } from 'http';
 
-/**
- * Converts headers to a plain object and removes certain headers that should not be cached.
- */
-export const normalizeHeaders = (headers: any): Record<string, string> => {
-	const isPlainObject = Object.getPrototypeOf(headers) === Object.prototype;
-
-	if (isPlainObject) {
-		const normalized = { ...headers };
-		delete normalized['accept-encoding'];
-		delete normalized['content-encoding'];
-		delete normalized['transfer-encoding'];
-		normalized['x-hdb'] = 'true';
-		return normalized;
-	}
-
-	const normalized: Record<string, string> = {};
-	for (const [key, value] of headers.entries()) {
-		if (key.toLowerCase() === 'accept-encoding') continue;
-		if (key.toLowerCase() === 'content-encoding') continue;
-		if (key.toLowerCase() === 'transfer-encoding') continue;
-		normalized[key] = value;
-	}
-
-	normalized['x-hdb'] = 'true';
-
-	return normalized;
-};
-
 const HOP_BY_HOP = new Set([
 	'connection',
+	'host',
 	'keep-alive',
 	'proxy-authenticate',
 	'proxy-authorization',
@@ -51,12 +24,10 @@ export const buildUpstreamHeaders = (headers: IncomingHttpHeaders) => {
 
 export const buildDownstreamHeaders = (upstreamHeaders: any) => {
 	const out = new Headers(upstreamHeaders);
-	// Always drop hop-by-hop
 	for (const k of [...out.keys()]) {
 		if (HOP_BY_HOP.has(k.toLowerCase())) out.delete(k);
 	}
-	// If undici auto-decompressed, remove misleading headers
-	out.delete('content-encoding');
+	out.delete('accept-encoding');
 	out.delete('content-length');
 	out.set('x-hdb', 'true');
 	return out;

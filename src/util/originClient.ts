@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { Pool, fetch as undiciFetch } from 'undici';
+import { Readable } from 'node:stream';
+import { Pool } from 'undici';
 
 const DEFAULT_ORIGIN_MAX_CONNECTIONS = 80;
 const DEFAULT_CLIENT_TTL_MS = 300_000;
@@ -16,6 +17,11 @@ const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, 
 const resolveEnvInt = (name: string, defaultValue: number): number =>
 	process.env[name] ? parseInt(process.env[name]!, 10) : defaultValue;
 
+/**
+ *
+ * Load testing mode: when enabled, `fetchFromOrigin` will return mock responses with random delays and body sizes,
+ *
+ */
 const LOAD_TEST_MODE = parseBool(process.env.HDB_LOAD_TEST_MODE);
 const LOAD_TEST_MIN_DELAY_MS = 30;
 const LOAD_TEST_MAX_DELAY_MS = 250;
@@ -73,6 +79,9 @@ const mockFetchFromOrigin = async (_url: URL, init: RequestInit = {}) => {
 		headers,
 	});
 };
+/**
+ * * ================================================================================================
+ */
 
 const getPool = (origin: string): Pool => {
 	let pool = poolsByOrigin.get(origin);
@@ -87,11 +96,35 @@ const getPool = (origin: string): Pool => {
 	return pool;
 };
 
-export const fetchFromOrigin = (url: URL, init = {}) => {
+export const fetchFromOrigin = async (url: URL, init: Record<string, any> = {}) => {
 	if (LOAD_TEST_MODE) {
 		return mockFetchFromOrigin(url, init as RequestInit);
 	}
 
 	const pool = getPool(url.origin);
-	return undiciFetch(url, { ...init, dispatcher: pool });
+	const result = await pool.request({
+		path: url.pathname + url.search,
+		method: init.method ?? 'GET',
+		headers: init.headers,
+		body: init.body ?? null,
+	});
+
+	const stats = pool.stats;
+	logger.info('Origin pool stats', {
+		origin: url.origin,
+		connected: stats.connected,
+		free: stats.free,
+		pending: stats.pending,
+		queued: stats.queued,
+		running: stats.running,
+		size: stats.size,
+	});
+
+	return {
+		status: result.statusCode,
+		statusText: '',
+		headers: result.headers,
+		body: Readable.toWeb(result.body) as ReadableStream<Uint8Array>,
+		ok: result.statusCode >= 200 && result.statusCode < 300,
+	};
 };

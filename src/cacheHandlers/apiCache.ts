@@ -90,7 +90,7 @@ const fetchFromCache = async (
 	const downstreamHeaders = buildDownstreamHeaders(upstreamResp.headers);
 
 	const ttlConfig = classifyRequest(request, cacheKey);
-	const shouldCache = upstreamResp.status === 200 && ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
+	const shouldCache = upstreamResp.ok && ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
 
 	const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
 
