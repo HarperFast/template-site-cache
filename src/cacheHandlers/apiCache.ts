@@ -1,24 +1,33 @@
+import { Resource } from 'harperdb';
+import { buildDownstreamHeaders, cachePutObservabilityHeaders, headerGet } from '../util/headers.js';
+import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
+import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG } from '../constants/index.js';
+import { buildAPICacheKey } from '../util/cacheKeys.js';
 import { SPECIAL_TTL } from '../resources/ttlRules.js';
 import {
-	buildDownstreamHeaders,
-	buildUpstreamHeaders,
-	cachePutObservabilityHeaders,
-	cacheGetObservabilityHeaders,
-} from '../util/headers.js';
-import { classifyRequest, headerToCacheTags, isInvalidated } from '../util/cache.js';
-import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, resolveOriginAuthHeader } from '../constants/index.js';
-import { buildAPICacheKey } from '../util/cacheKeys.js';
-import type { IncomingMessage } from 'http';
-import { fetchFromOrigin } from '../util/originClient.js';
-import { IncomingHttpHeaders } from 'undici/types/header.js';
-import type { CacheContent } from '../types/graphql.js';
+	fetchFromOrigin,
+	OriginErrorResponse,
+	buildOriginUrl,
+	buildUpstreamRequestHeaders,
+} from '../util/originClient.js';
+import type { TTLRuleMatchResult } from '../types/index.js';
 
-const { CacheContent: CacheContentTable } = databases.APICache;
+const { CacheContent: APICacheTable } = databases.APICache;
 
-const hasRequestBody = (request: IncomingMessage) => {
-	const contentLength = request.headers['content-length'];
+// Set<string> keyed on cacheKey: the resource and the wrapper run in different request contexts
+// (Harper request vs node IncomingMessage) so WeakMap on the request object isn't reliable here.
+const missCacheKeys = new Set<string>();
+
+const consumeWasMiss = (cacheKey: string): boolean => {
+	const wasMiss = missCacheKeys.has(cacheKey);
+	missCacheKeys.delete(cacheKey);
+	return wasMiss;
+};
+
+const hasRequestBody = (request: any) => {
+	const contentLength = headerGet(request.headers, 'content-length');
 	if (contentLength && Number(contentLength) > 0) return true;
-	return !!request.headers['transfer-encoding'];
+	return !!headerGet(request.headers, 'transfer-encoding');
 };
 
 const readNodeRequestBody = async (nodeRequest: any) => {
@@ -48,143 +57,91 @@ const readRequestBody = async (request: any) => {
 	}
 };
 
-const fetchWithCache = async (
-	request: IncomingMessage,
-	url: URL,
-	upstreamHeaders: IncomingHttpHeaders,
+/**
+ * External data source for the APICache.CacheContent table.
+ * Called by Harper on a cache miss; the returned record is stored automatically.
+ */
+export class APICacheSource extends Resource {
+	async get() {
+		const cacheKey = this.getId() as string;
+		const request = this.request;
+		const url = buildOriginUrl(request, CACHE_CONFIG.apiOrigin, CACHE_CONFIG.apiPathReplacement);
+
+		const response = await fetchFromOrigin(url, {
+			method: 'GET',
+			headers: buildUpstreamRequestHeaders(request, 'apiOrigin'),
+		});
+		const downstreamHeaders = buildDownstreamHeaders(response.headers);
+
+		if (!response.ok) {
+			const body = NO_BODY_RESPONSES.has(response.status) ? null : response.body;
+			throw new OriginErrorResponse(
+				response.status,
+				response.statusText,
+				Object.fromEntries(downstreamHeaders.entries()),
+				body
+			);
+		}
+
+		const ttlConfig = classifyRequest(request, cacheKey) as TTLRuleMatchResult;
+		const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
+		const blob = response.body ? createBlob(response.body, { saveBeforeCommit: true }) : null;
+
+		missCacheKeys.add(cacheKey);
+
+		return {
+			data: blob,
+			headers: JSON.stringify(Object.fromEntries(downstreamHeaders.entries())),
+			debugHeaders: JSON.stringify(debugHeaders),
+			groupCode: ttlConfig.groupCode,
+			refreshedAt: Date.now(),
+			cacheTags: headerToCacheTags(downstreamHeaders),
+			url: url.href,
+		};
+	}
+}
+
+APICacheTable.sourcedFrom(APICacheSource);
+
+const fetchCachedAPIResponse = async (
+	request: any,
+	cacheKey: string,
 	cacheInvalidations: Record<string, number>,
 	startTime: number
-) => {
-	const cacheKey = buildAPICacheKey(request);
+): Promise<Response> => {
+	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api', startTime, 'APICache');
 
-	// 1) Check cache
-	const cacheResult: null | CacheContent = await CacheContentTable.get(cacheKey);
-	if (cacheResult && !isInvalidated('api', cacheInvalidations, cacheResult.refreshedAt!, cacheResult.groupCode)) {
-		let cachedBody: Uint8Array | null = null;
-		try {
-			cachedBody = await cacheResult.data.bytes();
-		} catch (err) {
-			console.error('Error reading API cache blob, falling back to origin', cacheKey, err);
-		}
-
-		if (cachedBody) {
-			server.recordAnalytics(performance.now() - startTime, 'cache-hit', 'APICache');
-			// cache hit
-			return new Response(Buffer.from(cachedBody), {
-				status: 200,
-				headers: {
-					'x-hdb': 'true',
-					'x-hdb-cache': 'hit',
-					...JSON.parse(cacheResult.headers ?? '{}'),
-					...(request.headers['x-hdb-cache-debug'] ? cacheGetObservabilityHeaders(request, cacheKey, cacheResult) : {}),
-				},
-			});
-		}
+	if (entry instanceof Response) {
+		return entry;
 	}
 
-	// 2) Miss → fetch from origin
-	const init = { headers: upstreamHeaders };
-	const upstreamResp = await fetchFromOrigin(url, init);
-
-	// prepare downstream headers/body
-	const downstreamHeaders = buildDownstreamHeaders(upstreamResp.headers);
-
-	const ttlConfig = classifyRequest(request, cacheKey);
-	const shouldCache = upstreamResp.ok && ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
-
-	const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
-
-	let streamForClient = upstreamResp.body;
-
-	if (shouldCache) {
-		let expiresAt: number | undefined = Date.now() + ttlConfig.ttlSeconds * 1000;
-		if (ttlConfig.policy === SPECIAL_TTL.ORIGIN) {
-			const originExpires = downstreamHeaders.get('expires')!;
-			expiresAt = originExpires ? new Date(originExpires).getTime() : undefined;
-		} else if (ttlConfig.policy === SPECIAL_TTL.NEVER) {
-			expiresAt = undefined;
-		}
-
-		const headersForCache = Object.fromEntries(
-			Array.from(downstreamHeaders.entries()).filter(([k]) => k.toLowerCase() !== 'set-cookie')
-		);
-
-		if (upstreamResp.body) {
-			const [cacheStream, responseStream] = upstreamResp.body.tee();
-			streamForClient = responseStream;
-
-			const saveToCache = async () => {
-				const blob = await createBlob(cacheStream);
-				if (blob) {
-					await CacheContentTable.put(
-						cacheKey,
-						{
-							data: blob,
-							headers: JSON.stringify(headersForCache),
-							debugHeaders: JSON.stringify(debugHeaders),
-							groupCode: ttlConfig.groupCode,
-							refreshedAt: Date.now(),
-							cacheTags: headerToCacheTags(new Headers(headersForCache)),
-							url: url.href,
-						},
-						{ expiresAt }
-					);
-				}
-			};
-			saveToCache().catch((err) => console.error('Error saving API cache', cacheKey, err));
-		}
-	}
-
-	if (request.headers['x-hdb-cache-debug']) {
-		Object.entries(debugHeaders).forEach(([k, v]) => downstreamHeaders.set(k, v));
-	}
-
-	const body = !NO_BODY_RESPONSES.has(upstreamResp.status) ? streamForClient : null;
-
-	downstreamHeaders.set('x-hdb-cache', shouldCache ? 'miss' : 'no-cache');
-
-	server.recordAnalytics(performance.now() - startTime, shouldCache ? 'cache-miss' : 'no-cache', 'APICache');
-
-	const downstreamResponse = new Response(body, {
-		status: upstreamResp.status,
-		statusText: upstreamResp.statusText,
-		headers: downstreamHeaders,
-	});
-
-	return downstreamResponse;
+	const wasMiss = consumeWasMiss(cacheKey);
+	server.recordAnalytics(performance.now() - startTime, wasMiss ? 'cache-miss' : 'cache-hit', 'APICache');
+	return buildCacheResponse(entry, request, cacheKey, wasMiss ? 'miss' : 'hit');
 };
 
-export const handleAPI = async (request: IncomingMessage, cacheInvalidations: Record<string, number>) => {
+export const handleAPI = async (request: any, cacheInvalidations: Record<string, number>) => {
 	const startTime = performance.now();
-	const origin = CACHE_CONFIG.apiOrigin;
-
-	let url = new URL(request.url!, origin);
-	if (CACHE_CONFIG.apiPathReplacement) {
-		url = new URL(
-			request.url!.replace(CACHE_CONFIG.apiPathReplacement.search, CACHE_CONFIG.apiPathReplacement.replace),
-			origin
-		);
-	}
-
-	const upstreamHeaders = buildUpstreamHeaders(request.headers);
-	const originAuthHeader = resolveOriginAuthHeader('apiOrigin');
-	if (originAuthHeader) {
-		upstreamHeaders[originAuthHeader.headerName] = originAuthHeader.token;
-	}
 	const method = (request.method || 'GET').toUpperCase();
-	const incomingHasBody = METHODS_WITH_BODY.has(method) && hasRequestBody(request);
+	const bypassHeader = headerGet(request.headers, 'x-harper-cache-bypass');
 
-	// ---------- GET: try cache ----------
-	if (method === 'GET' && request.headers['x-harper-cache-bypass'] !== 'true') {
-		return fetchWithCache(request, url, upstreamHeaders, cacheInvalidations, startTime);
+	if (method === 'GET' && bypassHeader !== 'true') {
+		const cacheKey = buildAPICacheKey(request);
+		const ttlConfig = classifyRequest(request, cacheKey);
+		if (ttlConfig?.ruleId && ttlConfig.policy !== SPECIAL_TTL.NO_CACHE) {
+			return fetchCachedAPIResponse(request, cacheKey, cacheInvalidations, startTime);
+		}
 	}
 
-	// ---------- proxy (no caching) ----------
+	// Proxy path: non-GET, bypass, or no matching TTL rule
+	const url = buildOriginUrl(request, CACHE_CONFIG.apiOrigin, CACHE_CONFIG.apiPathReplacement);
+	const upstreamHeaders = buildUpstreamRequestHeaders(request, 'apiOrigin');
+	const incomingHasBody = METHODS_WITH_BODY.has(method) && hasRequestBody(request);
 	const init: RequestInit = { method, headers: upstreamHeaders as HeadersInit };
+
 	if (incomingHasBody) {
 		const requestBody = await readRequestBody(request);
 		if (requestBody.length > 0) {
-			// Use a replayable body source to avoid undici stream-source failures.
 			init.body = requestBody;
 		}
 	}
@@ -195,10 +152,5 @@ export const handleAPI = async (request: IncomingMessage, cacheInvalidations: Re
 	server.recordAnalytics(performance.now() - startTime, 'no-cache', 'APICache');
 
 	const body = !NO_BODY_RESPONSES.has(response.status) ? (response.body as BodyInit) : null;
-
-	return new Response(body, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	});
+	return new Response(body, { status: response.status, statusText: response.statusText, headers });
 };

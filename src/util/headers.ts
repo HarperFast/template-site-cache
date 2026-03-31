@@ -30,7 +30,7 @@ export const buildDownstreamHeaders = (upstreamHeaders: any) => {
 	out.delete('set-cookie');
 	out.delete('accept-encoding');
 	out.delete('content-length');
-	out.set('x-hdb', 'true');
+	out.set('x-harper', 'true');
 	return out;
 };
 
@@ -56,14 +56,14 @@ export const headerGet = (headers: any, key: string) => {
  * These headers can be added to the response to provide insights into caching behavior.
  */
 export const cachePutObservabilityHeaders = (req: IncomingMessage, ruleMeta: any, cacheKey: string) => ({
-	'x-hdb-cache-path': req.url,
-	'x-hdb-cache-rule': ruleMeta?.ruleName ? String(ruleMeta.ruleName) : 'none',
-	'x-hdb-cache-rule-id': ruleMeta?.ruleId ? String(ruleMeta.ruleId) : '',
-	'x-hdb-cache-policy': ruleMeta ? String(ruleMeta.policy) : 'none', // ttl | origin_expires | never | non)
-	'x-hdb-cache-ttl': ruleMeta?.ttlSeconds ? String(ruleMeta.ttlSeconds) : '0',
-	'x-hdb-cache-bucket': ruleMeta?.bucketPrefix ? ruleMeta.bucketPrefix : '',
-	'x-hdb-cache-pattern': ruleMeta?.matchedPattern ? ruleMeta.matchedPattern : '',
-	'x-hdb-cache-key': cacheKey,
+	'x-harper-cache-path': req.url,
+	'x-harper-cache-rule': ruleMeta?.ruleName ? String(ruleMeta.ruleName) : 'none',
+	'x-harper-cache-rule-id': ruleMeta?.ruleId ? String(ruleMeta.ruleId) : '',
+	'x-harper-cache-policy': ruleMeta ? String(ruleMeta.policy) : 'none', // ttl | origin_expires | never | non)
+	'x-harper-cache-ttl': ruleMeta?.ttlSeconds ? String(ruleMeta.ttlSeconds) : '0',
+	'x-harper-cache-bucket': ruleMeta?.bucketPrefix ? ruleMeta.bucketPrefix : '',
+	'x-harper-cache-pattern': ruleMeta?.matchedPattern ? ruleMeta.matchedPattern : '',
+	'x-harper-cache-key': cacheKey,
 });
 
 /**
@@ -76,7 +76,7 @@ export const cachePutObservabilityHeaders = (req: IncomingMessage, ruleMeta: any
  */
 export const cacheGetObservabilityHeaders = (req: IncomingMessage, cacheKey: string, cacheRecord: any) => ({
 	...JSON.parse(cacheRecord?.debugHeaders ?? '{}'),
-	'x-hdb-cache-path': req.url,
-	'x-hdb-cache-key': cacheKey,
-	'x-hdb-cache-ttl-remaining-sec': (cacheRecord.getMetadata().expiresAt - Date.now()) / 1000,
+	'x-harper-cache-path': req.url,
+	'x-harper-cache-key': cacheKey,
+	'x-harper-cache-ttl-remaining-sec': (cacheRecord.getMetadata().expiresAt - Date.now()) / 1000,
 });

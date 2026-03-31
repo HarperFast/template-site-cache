@@ -37,7 +37,7 @@ export type CacheInvalidation = {
 
 export type TtlRules = {
 	__typename?: 'TTLRules';
-	additionalMatchCritera?: Maybe<Array<Maybe<Scalars['Any']['output']>>>;
+	additionalMatchCriteria?: Maybe<Array<Maybe<Scalars['Any']['output']>>>;
 	description?: Maybe<Scalars['String']['output']>;
 	groupCode?: Maybe<Scalars['String']['output']>;
 	id?: Maybe<Scalars['ID']['output']>;

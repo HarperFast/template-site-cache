@@ -1,11 +1,37 @@
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
-import { Pool } from 'undici';
+import { errors, Pool } from 'undici';
+import { buildUpstreamHeaders } from './headers.js';
+import { resolveOriginAuthHeader } from '../constants/index.js';
 
 const DEFAULT_ORIGIN_MAX_CONNECTIONS = 80;
 const DEFAULT_CLIENT_TTL_MS = 300_000;
+const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
+const DEFAULT_HEADERS_TIMEOUT_MS = 30_000;
+const DEFAULT_BODY_TIMEOUT_MS = 60_000;
+
+const STATS_INTERVAL_MS = 30_000;
+const QUEUE_WARN_THRESHOLD = 5; // requests waiting for a free socket
+const UTILIZATION_WARN_THRESHOLD = 0.9; // fraction of connections in use
 
 const poolsByOrigin = new Map();
+
+setInterval(() => {
+	for (const [origin, pool] of poolsByOrigin) {
+		const { connected, free, pending, queued, running } = pool.stats;
+		const utilization = connected > 0 ? running / DEFAULT_ORIGIN_MAX_CONNECTIONS : 0;
+
+		if (queued > QUEUE_WARN_THRESHOLD || utilization >= UTILIZATION_WARN_THRESHOLD) {
+			logger.warn(
+				`[ORIGIN POOL] unhealthy pool for ${origin} — queued: ${queued}, pending: ${pending}, running: ${running}, free: ${free}, connected: ${connected}, utilization: ${(utilization * 100).toFixed(1)}%`
+			);
+		} else {
+			logger.info(
+				`[ORIGIN POOL] pool stats for ${origin} — queued: ${queued}, pending: ${pending}, running: ${running}, free: ${free}, connected: ${connected}, utilization: ${(utilization * 100).toFixed(1)}%`
+			);
+		}
+	}
+}, STATS_INTERVAL_MS).unref();
 
 const parseBool = (value: string | undefined): boolean =>
 	['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
@@ -15,7 +41,7 @@ const randomInt = (min: number, max: number) => {
 };
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const resolveEnvInt = (name: string, defaultValue: number): number =>
-	process.env[name] ? parseInt(process.env[name]!, 10) : defaultValue;
+	process.env[name] ? parseInt(process.env[name], 10) : defaultValue;
 
 /**
  *
@@ -73,6 +99,7 @@ const mockFetchFromOrigin = async (_url: URL, init: RequestInit = {}) => {
 
 	const body = method === 'HEAD' ? null : randomByteStream(totalBytes);
 
+	// TODO: make this return a readable stream to better simulate real origin responses, and to test streaming behavior in the cache and downstream.
 	return new Response(body, {
 		status: LOAD_TEST_STATUS,
 		statusText: 'Load Test Mock Origin Response',
@@ -90,10 +117,56 @@ const getPool = (origin: string): Pool => {
 			connections: resolveEnvInt('MAX_CONNECTIONS', DEFAULT_ORIGIN_MAX_CONNECTIONS),
 			keepAliveTimeout: resolveEnvInt('CLIENT_TTL_MS', DEFAULT_CLIENT_TTL_MS),
 			keepAliveMaxTimeout: resolveEnvInt('CLIENT_TTL_MS', DEFAULT_CLIENT_TTL_MS),
+			headersTimeout: resolveEnvInt('HEADERS_TIMEOUT_MS', DEFAULT_HEADERS_TIMEOUT_MS),
+			bodyTimeout: resolveEnvInt('BODY_TIMEOUT_MS', DEFAULT_BODY_TIMEOUT_MS),
+			connect: { timeout: resolveEnvInt('CONNECT_TIMEOUT_MS', DEFAULT_CONNECT_TIMEOUT_MS) },
 		});
 		poolsByOrigin.set(origin, pool);
 	}
 	return pool;
+};
+
+const TIMEOUT_504 = {
+	status: 504,
+	statusText: 'Gateway Timeout',
+	headers: {},
+	body: null as unknown as ReadableStream<Uint8Array>,
+	ok: false,
+};
+
+export class OriginErrorResponse extends Error {
+	constructor(
+		public readonly status: number,
+		public readonly statusText: string,
+		public readonly headers: Record<string, string>,
+		public readonly body: ReadableStream<Uint8Array> | null
+	) {
+		super(`Origin responded with ${status}`);
+	}
+}
+
+export const buildOriginUrl = (
+	request: any,
+	origin: string,
+	pathReplacement?: { search: string; replace: string }
+): URL => {
+	const path = request.url as string;
+	if (pathReplacement) {
+		return new URL(path.replace(pathReplacement.search, pathReplacement.replace), origin);
+	}
+	return new URL(path, origin);
+};
+
+export const buildUpstreamRequestHeaders = (
+	request: any,
+	target: 'defaultOrigin' | 'apiOrigin'
+): Record<string, string> => {
+	const headers = buildUpstreamHeaders(request.headers);
+	const originAuthHeader = resolveOriginAuthHeader(target);
+	if (originAuthHeader) {
+		headers[originAuthHeader.headerName] = originAuthHeader.token;
+	}
+	return headers;
 };
 
 export const fetchFromOrigin = async (url: URL, init: Record<string, any> = {}) => {
@@ -102,12 +175,25 @@ export const fetchFromOrigin = async (url: URL, init: Record<string, any> = {}) 
 	}
 
 	const pool = getPool(url.origin);
-	const result = await pool.request({
-		path: url.pathname + url.search,
-		method: init.method ?? 'GET',
-		headers: init.headers,
-		body: init.body ?? null,
-	});
+	let result: Awaited<ReturnType<Pool['request']>>;
+	try {
+		result = await pool.request({
+			path: url.pathname + url.search,
+			method: init.method ?? 'GET',
+			headers: init.headers,
+			body: init.body ?? null,
+		});
+	} catch (err) {
+		if (
+			err instanceof errors.HeadersTimeoutError ||
+			err instanceof errors.BodyTimeoutError ||
+			err instanceof errors.ConnectTimeoutError
+		) {
+			logger.warn(`[ORIGIN TIMEOUT] ${err.constructor.name}: ${url.pathname + url.search}`);
+			return TIMEOUT_504;
+		}
+		throw err;
+	}
 
 	const stats = pool.stats;
 	logger.info('Origin pool stats', {
@@ -119,6 +205,12 @@ export const fetchFromOrigin = async (url: URL, init: Record<string, any> = {}) 
 		running: stats.running,
 		size: stats.size,
 	});
+
+	if (result.statusCode >= 500) {
+		logger.warn(
+			`[ORIGIN ERROR] status: ${result.statusCode}, url: ${url.pathname + url.search}, method: ${init.method ?? 'GET'}`
+		);
+	}
 
 	return {
 		status: result.statusCode,

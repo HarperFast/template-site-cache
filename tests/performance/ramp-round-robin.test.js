@@ -80,7 +80,7 @@ export default function () {
 		accept: 'text/html,application/json;q=0.9,*/*;q=0.8',
 	};
 	if (SEND_HDB_AUTH) {
-		headers['x-hdb-authorization'] = AUTH_HEADER;
+		headers['x-harper-authorization'] = AUTH_HEADER;
 	}
 
 	const payload = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(REQUEST_METHOD) ? REQUEST_BODY : null;

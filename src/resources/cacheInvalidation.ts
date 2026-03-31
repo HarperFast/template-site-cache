@@ -1,5 +1,5 @@
 import type { CacheInvalidationRequest } from '../types/index.js';
-import { CACHE_INVALIDATION_KEY } from '../constants/index.js';
+import { ALLOWED_ROLES_ADMIN, CACHE_INVALIDATION_KEY } from '../constants/index.js';
 
 const { CacheInvalidation: CacheInvalidationTable } = databases.CacheManagement;
 
@@ -30,7 +30,7 @@ const handleCacheTagRecordDeletion = async (cacheTag?: string): Promise<(string 
 
 	await Promise.all([
 		handleDeletes(databases.APICache.CacheContent, 'cacheTags', 'contains', cacheTag),
-		handleDeletes(databases.DefaultCache.CacheContent, 'cacheTags', 'contains', cacheTag)
+		handleDeletes(databases.DefaultCache.CacheContent, 'cacheTags', 'contains', cacheTag),
 	]);
 
 	return [200, `Records with cacheTag "${cacheTag}" have been deleted.`];
@@ -41,13 +41,17 @@ const handleUrlRecordDeletion = async (url?: string): Promise<(string | number)[
 
 	await Promise.all([
 		handleDeletes(databases.APICache.CacheContent, 'url', 'equals', url),
-		handleDeletes(databases.DefaultCache.CacheContent, 'url', 'equals', url)
+		handleDeletes(databases.DefaultCache.CacheContent, 'url', 'equals', url),
 	]);
 
 	return [200, `Records with url "${url}" have been deleted.`];
 };
 
 export class Invalidate extends Resource {
+	allowCreate(user) {
+		return ALLOWED_ROLES_ADMIN.includes(user.role.role);
+	}
+
 	async post(body: CacheInvalidationRequest) {
 		const type = body.type;
 		if (!['api', 'page', 'cacheTag', 'url'].includes(type)) {
