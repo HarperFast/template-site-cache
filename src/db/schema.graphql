@@ -35,7 +35,7 @@ type TTLRules @table(database: "CacheManagement") {
 	pathPatterns: [String]!
 	ttl: String! # i.e. 30m, 1h, 6h, 1d, 1m, 1y, origin_expires, never
 	groupCode: String # optional code for grouped evictions
-	additionalMatchCritera: [Any] # optional additional criteria to match (i.e. headers, query params, etc. (see README for details)
+	additionalMatchCriteria: [Any] # optional additional criteria to match (i.e. headers, query params, etc. (see README for details)
 }
 
 type CacheInvalidation @table(database: "CacheManagement") {

@@ -249,16 +249,16 @@ const waitForCacheState = async (requestPath, headers, expectedState, failureHin
 
 	while (Date.now() < deadline) {
 		const response = await harperRequest(requestPath, { headers });
-		const cacheState = response.headers.get('x-hdb-cache');
+		const cacheState = response.headers.get('x-harper-cache');
 		if (cacheState === expectedState) return response;
 
 		const body = await response.text();
-		lastObservation = `status=${response.status}, x-hdb-cache=${cacheState}, body=${body.slice(0, 240)}`;
+		lastObservation = `status=${response.status}, x-harper-cache=${cacheState}, body=${body.slice(0, 240)}`;
 
 		// Surface server-side configuration issues immediately instead of waiting for full timeout.
 		if (response.status >= 500 && /Invalid URL/i.test(body)) {
 			throw new Error(
-				`Received server error while waiting for x-hdb-cache=${expectedState} on ${requestPath}. ${lastObservation}. ${failureHint}`
+				`Received server error while waiting for x-harper-cache=${expectedState} on ${requestPath}. ${lastObservation}. ${failureHint}`
 			);
 		}
 
@@ -266,7 +266,7 @@ const waitForCacheState = async (requestPath, headers, expectedState, failureHin
 	}
 
 	throw new Error(
-		`Timed out waiting for x-hdb-cache=${expectedState} on ${requestPath}. Last observation: ${lastObservation}. ${failureHint}`
+		`Timed out waiting for x-harper-cache=${expectedState} on ${requestPath}. Last observation: ${lastObservation}. ${failureHint}`
 	);
 };
 
@@ -354,11 +354,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(defaultOrigin.hitsFor('GET', originPath) - beforeHits, 1);
 	});
@@ -374,11 +374,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestA, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestB, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(defaultOrigin.hitsFor('GET', lowerOriginPath) - lowerBefore, 1);
 		assert.equal(defaultOrigin.hitsFor('GET', upperOriginPath) - upperBefore, 0);
@@ -395,11 +395,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestA, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestB, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(defaultOrigin.hitsFor('GET', withSlashOriginPath) - withSlashBefore, 1);
 		assert.equal(defaultOrigin.hitsFor('GET', withoutSlashOriginPath) - withoutSlashBefore, 0);
@@ -413,11 +413,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestA, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestB, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(defaultOrigin.hitsFor('GET', originPath) - beforeHits, 1);
 	});
@@ -430,11 +430,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestA);
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestB);
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(apiOrigin.hitsFor('GET', originPath) - beforeHits, 1);
 	});
@@ -450,7 +450,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			},
 		});
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath, {
 			headers: {
@@ -458,7 +458,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			},
 		});
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(second.headers.get('x-harper-cache'), 'miss');
 
 		const third = await harperRequest(requestPath, {
 			headers: {
@@ -466,7 +466,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			},
 		});
 		assert.equal(third.status, 200);
-		assert.equal(third.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(third.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(apiOrigin.hitsFor('GET', originPath) - beforeHits, 2);
 	});
@@ -484,7 +484,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			body: JSON.stringify({ message: 'hello' }),
 		});
 		assert.equal(first.status, 200);
-		assert.notEqual(first.headers.get('x-hdb-cache'), 'hit');
+		assert.notEqual(first.headers.get('x-harper-cache'), 'hit');
 
 		const second = await harperRequest(requestPath, {
 			method: 'POST',
@@ -494,7 +494,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			body: JSON.stringify({ message: 'hello' }),
 		});
 		assert.equal(second.status, 200);
-		assert.notEqual(second.headers.get('x-hdb-cache'), 'hit');
+		assert.notEqual(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(apiOrigin.hitsFor('POST', originPath) - beforeHits, 2);
 	});
@@ -511,7 +511,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			},
 		});
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath, {
 			headers: {
@@ -519,7 +519,7 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 			},
 		});
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		assert.equal(apiOrigin.hitsFor('GET', originPath) - apiBeforeHits, 1);
 		assert.equal(defaultOrigin.hitsFor('GET', originPath) - defaultBeforeHits, 0);
@@ -532,11 +532,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestPath);
 		assert.equal(first.status, 404);
-		assert.equal(first.headers.get('x-hdb-cache'), 'no-cache');
+		assert.equal(first.headers.get('x-harper-cache'), 'no-cache');
 
 		const second = await harperRequest(requestPath);
 		assert.equal(second.status, 404);
-		assert.equal(second.headers.get('x-hdb-cache'), 'no-cache');
+		assert.equal(second.headers.get('x-harper-cache'), 'no-cache');
 
 		assert.equal(apiOrigin.hitsFor('GET', originPath) - beforeHits, 2);
 	});
@@ -549,11 +549,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		await invalidateByCacheTag(cacheTag);
 
@@ -582,11 +582,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath, { headers: PAGE_HEADERS });
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		await invalidateByType('page');
 
@@ -615,11 +615,11 @@ describe('cache integration against deployed Harper (mocked origins)', { concurr
 
 		const first = await harperRequest(requestPath);
 		assert.equal(first.status, 200);
-		assert.equal(first.headers.get('x-hdb-cache'), 'miss');
+		assert.equal(first.headers.get('x-harper-cache'), 'miss');
 
 		const second = await harperRequest(requestPath);
 		assert.equal(second.status, 200);
-		assert.equal(second.headers.get('x-hdb-cache'), 'hit');
+		assert.equal(second.headers.get('x-harper-cache'), 'hit');
 
 		await invalidateByType('api');
 

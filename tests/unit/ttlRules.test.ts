@@ -7,7 +7,7 @@ type TestRule = {
 	pathPatterns: string[];
 	ttl: string;
 	groupCode?: string;
-	additionalMatchCritera?: Array<{
+	additionalMatchCriteria?: Array<{
 		additionalMatchType?: string;
 		additionalMatchOperator?: string;
 		additionalMatchKey?: string;
@@ -162,7 +162,7 @@ describe('TTLRules validation', () => {
 
 		const response = await resource.post(
 			baseRule({
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: 'cookie',
 						additionalMatchOperator: CONDITION_OPERATOR.EQUALS,
@@ -184,7 +184,7 @@ describe('TTLRules validation', () => {
 
 		const response = await resource.post(
 			baseRule({
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: MATCH_TYPE.QUERY,
 						additionalMatchOperator: 'gt',
@@ -206,7 +206,7 @@ describe('TTLRules validation', () => {
 
 		const response = await resource.post(
 			baseRule({
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: MATCH_TYPE.HEADER,
 						additionalMatchOperator: CONDITION_OPERATOR.CONTAINS,
@@ -228,7 +228,7 @@ describe('TTLRules validation', () => {
 		const existsResponse = await resource.post(
 			baseRule({
 				id: 'exists',
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: MATCH_TYPE.HEADER,
 						additionalMatchOperator: CONDITION_OPERATOR.EXISTS,
@@ -292,7 +292,7 @@ describe('TTL rule matching', () => {
 				description: 'query rule',
 				pathPatterns: ['^/search$'],
 				ttl: '1h',
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: MATCH_TYPE.QUERY,
 						additionalMatchOperator: CONDITION_OPERATOR.EQUALS,
@@ -321,7 +321,7 @@ describe('TTL rule matching', () => {
 				description: 'header rule',
 				pathPatterns: ['^/header-test$'],
 				ttl: '30m',
-				additionalMatchCritera: [
+				additionalMatchCriteria: [
 					{
 						additionalMatchType: MATCH_TYPE.HEADER,
 						additionalMatchOperator: CONDITION_OPERATOR.EXISTS,

@@ -1,5 +1,5 @@
 import type { CacheInvalidationRequest } from '../types/index.js';
-import { CACHE_INVALIDATIONM_KEY } from '../constants/index.js';
+import { ALLOWED_ROLES_ADMIN, CACHE_INVALIDATION_KEY } from '../constants/index.js';
 
 const { CacheInvalidation: CacheInvalidationTable } = databases.CacheManagement;
 
@@ -21,15 +21,17 @@ const handleDeletes = async (
 	});
 
 	for await (const record of it) {
-		await table.delete(record.cacheKey);
+		table.delete(record.cacheKey);
 	}
 };
 
 const handleCacheTagRecordDeletion = async (cacheTag?: string): Promise<(string | number)[]> => {
 	if (!cacheTag) return [400, 'cacheTag must not be empty'];
 
-	await handleDeletes(databases.APICache.CacheContent, 'cacheTags', 'contains', cacheTag);
-	await handleDeletes(databases.DefaultCache.CacheContent, 'cacheTags', 'contains', cacheTag);
+	await Promise.all([
+		handleDeletes(databases.APICache.CacheContent, 'cacheTags', 'contains', cacheTag),
+		handleDeletes(databases.DefaultCache.CacheContent, 'cacheTags', 'contains', cacheTag),
+	]);
 
 	return [200, `Records with cacheTag "${cacheTag}" have been deleted.`];
 };
@@ -37,13 +39,19 @@ const handleCacheTagRecordDeletion = async (cacheTag?: string): Promise<(string 
 const handleUrlRecordDeletion = async (url?: string): Promise<(string | number)[]> => {
 	if (!url) return [400, 'url must not be empty'];
 
-	await handleDeletes(databases.APICache.CacheContent, 'url', 'equals', url);
-	await handleDeletes(databases.DefaultCache.CacheContent, 'url', 'equals', url);
+	await Promise.all([
+		handleDeletes(databases.APICache.CacheContent, 'url', 'equals', url),
+		handleDeletes(databases.DefaultCache.CacheContent, 'url', 'equals', url),
+	]);
 
 	return [200, `Records with url "${url}" have been deleted.`];
 };
 
 export class Invalidate extends Resource {
+	allowCreate(user) {
+		return ALLOWED_ROLES_ADMIN.includes(user.role.role);
+	}
+
 	async post(body: CacheInvalidationRequest) {
 		const type = body.type;
 		if (!['api', 'page', 'cacheTag', 'url'].includes(type)) {
@@ -73,7 +81,7 @@ export class Invalidate extends Resource {
 
 		const groupCode = body.groupCode;
 
-		const previousInvalidations = await CacheInvalidationTable.get(CACHE_INVALIDATIONM_KEY);
+		const previousInvalidations = await CacheInvalidationTable.get(CACHE_INVALIDATION_KEY);
 
 		const timestamp = Date.now();
 
@@ -88,7 +96,7 @@ export class Invalidate extends Resource {
 			msg = `${type} records created prior to ${new Date(timestamp).toISOString()} are invalidated.`;
 		}
 
-		await CacheInvalidationTable.put(CACHE_INVALIDATIONM_KEY, {
+		await CacheInvalidationTable.put(CACHE_INVALIDATION_KEY, {
 			timestamps: newInvalidations,
 		});
 

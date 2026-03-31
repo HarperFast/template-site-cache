@@ -7,43 +7,7 @@ import {
 	cacheGetObservabilityHeaders,
 	cachePutObservabilityHeaders,
 	headerGet,
-	normalizeHeaders,
 } from '../../src/util/headers.ts';
-
-describe('normalizeHeaders', () => {
-	it('normalizes plain objects and strips cache-unsafe encodings', () => {
-		const input = {
-			'accept-encoding': 'gzip',
-			'content-encoding': 'br',
-			'transfer-encoding': 'chunked',
-			'cache-control': 'max-age=120',
-		};
-
-		const out = normalizeHeaders(input);
-
-		assert.deepEqual(out, {
-			'cache-control': 'max-age=120',
-			'x-hdb': 'true',
-		});
-		assert.equal(input['accept-encoding'], 'gzip');
-	});
-
-	it('normalizes Fetch Headers and strips removed keys case-insensitively', () => {
-		const out = normalizeHeaders(
-			new Headers({
-				'Accept-Encoding': 'gzip',
-				'Content-Encoding': 'br',
-				'Transfer-Encoding': 'chunked',
-				'ETag': 'abc123',
-			})
-		);
-
-		assert.deepEqual(out, {
-			'etag': 'abc123',
-			'x-hdb': 'true',
-		});
-	});
-});
 
 describe('buildUpstreamHeaders', () => {
 	it('removes hop-by-hop and pseudo headers', () => {
@@ -72,10 +36,12 @@ describe('buildUpstreamHeaders', () => {
 });
 
 describe('buildDownstreamHeaders', () => {
-	it('drops hop-by-hop and misleading body headers and sets x-hdb', () => {
+	it('drops hop-by-hop headers, set-cookie, accept-encoding, content-length and sets x-harper', () => {
 		const out = buildDownstreamHeaders({
 			'Connection': 'keep-alive',
 			'TE': 'trailers',
+			'set-cookie': 'session=abc',
+			'accept-encoding': 'gzip',
 			'content-encoding': 'br',
 			'Content-Length': '123',
 			'x-custom': 'ok',
@@ -83,10 +49,13 @@ describe('buildDownstreamHeaders', () => {
 
 		assert.equal(out.get('connection'), null);
 		assert.equal(out.get('te'), null);
-		assert.equal(out.get('content-encoding'), null);
+		assert.equal(out.get('set-cookie'), null);
+		assert.equal(out.get('accept-encoding'), null);
 		assert.equal(out.get('content-length'), null);
+		// content-encoding is preserved — body bytes are stored as-is
+		assert.equal(out.get('content-encoding'), 'br');
 		assert.equal(out.get('x-custom'), 'ok');
-		assert.equal(out.get('x-hdb'), 'true');
+		assert.equal(out.get('x-harper'), 'true');
 	});
 });
 
@@ -120,14 +89,14 @@ describe('cache observability headers', () => {
 		);
 
 		assert.deepEqual(out, {
-			'x-hdb-cache-path': '/products?page=2',
-			'x-hdb-cache-rule': 'Product listing',
-			'x-hdb-cache-rule-id': '42',
-			'x-hdb-cache-policy': 'ttl',
-			'x-hdb-cache-ttl': '300',
-			'x-hdb-cache-bucket': '/products',
-			'x-hdb-cache-pattern': '^/products$',
-			'x-hdb-cache-key': 'cache-key-1',
+			'x-harper-cache-path': '/products?page=2',
+			'x-harper-cache-rule': 'Product listing',
+			'x-harper-cache-rule-id': '42',
+			'x-harper-cache-policy': 'ttl',
+			'x-harper-cache-ttl': '300',
+			'x-harper-cache-bucket': '/products',
+			'x-harper-cache-pattern': '^/products$',
+			'x-harper-cache-key': 'cache-key-1',
 		});
 	});
 
@@ -141,7 +110,7 @@ describe('cache observability headers', () => {
 			const cacheRecord = {
 				debugHeaders: JSON.stringify({
 					'x-debug': 'true',
-					'x-hdb-cache-path': '/stale',
+					'x-harper-cache-path': '/stale',
 				}),
 				getMetadata: () => ({ expiresAt: now + 4_500 }),
 			};
@@ -149,9 +118,9 @@ describe('cache observability headers', () => {
 			const out = cacheGetObservabilityHeaders(req, 'cache-key-2', cacheRecord);
 
 			assert.equal(out['x-debug'], 'true');
-			assert.equal(out['x-hdb-cache-path'], '/fresh');
-			assert.equal(out['x-hdb-cache-key'], 'cache-key-2');
-			assert.equal(out['x-hdb-cache-ttl-remaining-sec'], 4.5);
+			assert.equal(out['x-harper-cache-path'], '/fresh');
+			assert.equal(out['x-harper-cache-key'], 'cache-key-2');
+			assert.equal(out['x-harper-cache-ttl-remaining-sec'], 4.5);
 		} finally {
 			Date.now = originalNow;
 		}

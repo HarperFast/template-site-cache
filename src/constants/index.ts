@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-export const RESERVED_PATHS = ['/status', '/prometheus_exporter/metrics', '/cache/ttlConfig', '/cache/invalidate']; // Paths that bypass cache logic
 export const KEY_OVERFLOW = 1000; // max key size before hashing
 export const NO_BODY_RESPONSES = new Set([204, 304]); // HTTP status codes that must not have a body
 export const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-export const ALLOWED_ROLES = ['cache_user', 'super_user'];
-export const CACHE_INVALIDATIONM_KEY = 1; // Primary key for cache invalidation record in the database
+export const ALLOWED_ROLES_CACHE = ['cache_user', 'cache_admin', 'super_user'];
+export const ALLOWED_ROLES_ADMIN = ['cache_admin', 'super_user'];
+export const CACHE_INVALIDATION_KEY = 1; // Primary key for cache invalidation record in the database
 
 type OriginTarget = 'defaultOrigin' | 'apiOrigin';
 
@@ -33,6 +33,19 @@ try {
 }
 
 export const CACHE_CONFIG: Record<string, any> = cacheConfigData;
+
+const EXTRA_RESERVED_PATHS = process.env.RESERVED_PATHS
+	? process.env.RESERVED_PATHS.split(',')
+			.map((p) => p.trim())
+			.filter(Boolean)
+	: [];
+export const RESERVED_PATHS = [
+	'/status',
+	'/prometheus_exporter/metrics',
+	'/cache/ttlConfig',
+	'/cache/invalidate',
+	...EXTRA_RESERVED_PATHS,
+];
 
 const getTrimmedString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 

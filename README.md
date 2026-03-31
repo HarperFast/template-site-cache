@@ -16,6 +16,7 @@ It supports:
 - [TTL Rules Engine](#ttl-rules-engine)
 - [Harper Schema](#Harper-schema)
 - [Cache Configuration Reference](#cache-configuration-reference)
+- [Environment Variables](#environment-variables)
 - [Admin Resources](#admin-resources)
 - [Invalidation Model](#invalidation-model)
 - [Headers and Observability](#headers-and-observability)
@@ -28,14 +29,17 @@ It supports:
 This component is implemented as:
 
 - A global HTTP interceptor in `src/index.ts` using `server.http(...)`.
+- Cache handler modules in `src/cacheHandlers/`:
+  - `defaultCache.ts` — page/HTML cache using Harper's `sourcedFrom` external data source pattern
+  - `apiCache.ts` — API response cache using the same pattern
 - Custom resource classes for rule management and invalidation:
-  - `CacheConfig` in `src/resources/cacheConfig.ts`
+  - `TTLRules` in `src/resources/ttlRules.ts`
   - `Invalidate` in `src/resources/cacheInvalidation.ts`
 - Utility modules for:
-  - rule classification (`src/util/cache.ts`)
+  - rule classification and cache entry fetching (`src/util/cache.ts`)
   - key generation (`src/util/cacheKeys.ts`)
   - header handling (`src/util/headers.ts`)
-  - origin fetch pooling (`src/util/originClient.ts`)
+  - origin fetch pooling with connection reuse and timeouts (`src/util/originClient.ts`)
 
 Runtime bootstrap behavior:
 
@@ -49,16 +53,17 @@ Runtime bootstrap behavior:
 
 Incoming traffic is processed by `server.http(...)`:
 
-- Reserved paths bypass cache routing:
+- Reserved paths bypass cache routing (always bypassed):
   - `/status`
   - `/prometheus_exporter/metrics`
   - `/cache/ttlConfig`
   - `/cache/invalidate`
-- Other requests are authenticated using `x-hdb-authorization` (Basic auth).
+  - Additional paths can be added via the `RESERVED_PATHS` env var (comma-separated).
+- Other requests are authenticated using `authorization` (Basic auth).
 - Requests are classified as API traffic when either condition matches:
-  - a configurable header
-  - URL contains configured configurable API prefix
-- API requests use `handleAPI(...)`; everything else uses `handleDefault(...)`.
+  - a configurable header (`CACHE_CONFIG.apiHeader`)
+  - URL contains configured API prefix (`CACHE_CONFIG.apiPathPrefix`)
+- API requests route to `handleAPI(...)`; cacheable page requests route to `fetchCachedResponse(...)`, non-cacheable to `originPassthrough(...)`.
 
 ### 2) Cache key generation
 
@@ -86,18 +91,18 @@ Each request is classified against in-memory TTL rules:
 
 ### 4) Cache read/write behavior
 
-#### API flow (`src/resources/apiCache.ts`)
+#### API flow (`src/cacheHandlers/apiCache.ts`)
 
 - `GET` requests can use cache unless `x-harper-cache-bypass: true`.
-- Cache hit returns stored payload + stored headers + `x-hdb-cache: hit`.
-- Cache miss fetches origin, conditionally stores successful responses (`status === 200` and matching TTL rule), returns `x-hdb-cache: miss`.
-- Non-cacheable API responses return `x-hdb-cache: no-cache`.
+- Cache hit returns stored payload + stored headers + `x-harper-cache: hit`.
+- Cache miss fetches origin, conditionally stores successful responses (`status === 200` and matching TTL rule), returns `x-harper-cache: miss`.
+- Non-cacheable API responses return `x-harper-cache: no-cache`.
 - Non-GET API methods are proxied without caching.
 
-#### Default/page flow (`src/resources/defaultCache.ts`)
+#### Default/page flow (`src/cacheHandlers/defaultCache.ts`)
 
 - Computes page cache key and rule match.
-- If cacheable and present, returns cached content (`x-hdb-cache: hit`).
+- If cacheable and present, returns cached content (`x-harper-cache: hit`).
 - Otherwise fetches origin and stores response when rule exists.
 - Unsuccessful origin responses are not cached.
 
@@ -120,7 +125,7 @@ Each rule row supports:
 - `pathPatterns`: array of regex strings
 - `ttl`: duration or special policy
 - `groupCode` (optional)
-- `additionalMatchCritera` (optional)
+- `additionalMatchCriteria` (optional)
 
 ### TTL values
 
@@ -133,8 +138,10 @@ Supported rule policies in runtime:
 
 Validation on the admin resource currently accepts:
 
-- Durations: `1m`, `6h`, `1d`, `1y` (pattern: integer + `m|h|d|y`)
-- Specials: `origin_expires`, `never`, `no_cache`
+- Durations: `1m`, `6h`, `1d`, `1y` (pattern: positive integer + `m|h|d|y`)
+- Specials: `origin_expires`, `never`
+
+Note: `no_cache` is a runtime-only policy and cannot be submitted via the admin API.
 
 Note:
 
@@ -142,7 +149,7 @@ Note:
 
 ### Additional match criteria
 
-`additionalMatchCritera` entries support:
+`additionalMatchCriteria` entries support:
 
 - `additionalMatchType`: `header` or `query`
 - `additionalMatchOperator`: `equals`, `not_equals`, `contains`, `not_contains`, `exists`, `not_exists`
@@ -207,14 +214,14 @@ Source: `src/db/schema.graphql`
 
 ### `CacheManagement.TTLRules`
 
-| Field                    | Type        | Notes                                  |
-| ------------------------ | ----------- | -------------------------------------- |
-| `id`                     | `ID`        | Primary key                            |
-| `description`            | `String`    | Human-readable label                   |
-| `pathPatterns`           | `[String]!` | Regex list                             |
-| `ttl`                    | `String!`   | Duration or special policy             |
-| `groupCode`              | `String`    | Optional grouped invalidation key      |
-| `additionalMatchCritera` | `[Any]`     | Optional conditional matching criteria |
+| Field                     | Type        | Notes                                  |
+| ------------------------- | ----------- | -------------------------------------- |
+| `id`                      | `ID`        | Primary key                            |
+| `description`             | `String`    | Human-readable label                   |
+| `pathPatterns`            | `[String]!` | Regex list                             |
+| `ttl`                     | `String!`   | Duration or special policy             |
+| `groupCode`               | `String`    | Optional grouped invalidation key      |
+| `additionalMatchCriteria` | `[Any]`     | Optional conditional matching criteria |
 
 ### `CacheManagement.CacheInvalidation`
 
@@ -329,6 +336,26 @@ If `defaultOriginAuthHeader` is set, provide one of as an env var:
 - `HDB_DEFAULT_ORIGIN_AUTH_TOKEN`
 - `DEFAULT_ORIGIN_AUTH_TOKEN`
 
+## Environment Variables
+
+All variables are optional unless noted.
+
+| Variable                        | Default  | Description                                                                                          |
+| ------------------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| `ENVIRONMENT`                   | `local`  | Selects the `cacheConfiguration.<env>.json` file to load at startup.                                 |
+| `REQUEST_TIMEOUT_MS`            | `30000`  | Outer per-request timeout (ms). Requests exceeding this return `504 Gateway Timeout`.                |
+| `MAX_CONNECTIONS`               | `80`     | Max simultaneous connections per origin in the undici pool.                                          |
+| `CLIENT_TTL_MS`                 | `300000` | Keep-alive timeout for pooled connections (ms).                                                      |
+| `CONNECT_TIMEOUT_MS`            | `10000`  | TCP connect timeout per origin request (ms).                                                         |
+| `HEADERS_TIMEOUT_MS`            | `30000`  | Time to wait for response headers from origin (ms).                                                  |
+| `BODY_TIMEOUT_MS`               | `60000`  | Time to wait for the full response body from origin (ms).                                            |
+| `RESERVED_PATHS`                | _(none)_ | Comma-separated additional URL paths that bypass cache logic entirely (e.g. `/health,/ping`).        |
+| `HDB_LOAD_TEST_MODE`            | `false`  | When `true`, replaces all origin fetches with mock responses for load testing without a real origin. |
+| `API_ORIGIN_AUTH_TOKEN`         | _(none)_ | Auth token forwarded to the API origin when `apiOriginAuthHeader` is configured.                     |
+| `HDB_API_ORIGIN_AUTH_TOKEN`     | _(none)_ | Same as above; takes priority over `API_ORIGIN_AUTH_TOKEN`.                                          |
+| `DEFAULT_ORIGIN_AUTH_TOKEN`     | _(none)_ | Auth token forwarded to the default origin when `defaultOriginAuthHeader` is configured.             |
+| `HDB_DEFAULT_ORIGIN_AUTH_TOKEN` | _(none)_ | Same as above; takes priority over `DEFAULT_ORIGIN_AUTH_TOKEN`.                                      |
+
 ## Admin Resources
 
 The module exports:
@@ -350,7 +377,7 @@ Path mapping for exported Resources:
 	"pathPatterns": ["^.*/catalog/v\\d+/category/.+$"],
 	"ttl": "6h",
 	"groupCode": "catalog",
-	"additionalMatchCritera": [
+	"additionalMatchCriteria": [
 		{
 			"additionalMatchType": "query",
 			"additionalMatchOperator": "equals",
@@ -413,23 +440,23 @@ Expected behavior:
 
 - `x-harper-cache-bypass: true`
   - Bypass cache and fetch origin directly.
-- `x-hdb-cache-debug: true`
+- `x-harper-cache-debug: true`
   - Include detailed cache debug headers in response.
 
 ### Response headers
 
-- `x-hdb: true`
-- `x-hdb-cache: hit | miss | no-cache`
+- `x-harper: true`
+- `x-harper-cache: hit | miss`
 - Debug headers when enabled:
-  - `x-hdb-cache-path`
-  - `x-hdb-cache-rule`
-  - `x-hdb-cache-rule-id`
-  - `x-hdb-cache-policy`
-  - `x-hdb-cache-ttl`
-  - `x-hdb-cache-bucket`
-  - `x-hdb-cache-pattern`
-  - `x-hdb-cache-key`
-  - `x-hdb-cache-ttl-remaining-sec`
+  - `x-harper-cache-path`
+  - `x-harper-cache-rule`
+  - `x-harper-cache-rule-id`
+  - `x-harper-cache-policy`
+  - `x-harper-cache-ttl`
+  - `x-harper-cache-bucket`
+  - `x-harper-cache-pattern`
+  - `x-harper-cache-key`
+  - `x-harper-cache-ttl-remaining-sec`
 
 ## Authentication Model
 
@@ -451,16 +478,20 @@ authorization: Basic SERCX0FETUlOOnBhc3N3b3Jk
 
 ### Required roles
 
-The component enforces role-based access via `ALLOWED_ROLES`:
+The component enforces role-based access using two role sets:
 
 ```ts
-ALLOWED_ROLES = ['cache_user', 'super_user'];
+ALLOWED_ROLES_CACHE = ['cache_user', 'cache_admin', 'super_user'];
+ALLOWED_ROLES_ADMIN = ['cache_admin', 'super_user'];
 ```
 
-Requests authenticated with a user that does not hold one of these roles will be rejected. To grant access to a user:
+- **`ALLOWED_ROLES_CACHE`** — required for all cache proxy requests. Users must hold one of these roles to have their requests served.
+- **`ALLOWED_ROLES_ADMIN`** — required for admin operations such as TTL rule management (`/cache/ttlConfig`) and cache invalidation (`/cache/invalidate`).
 
-1. Create the user in Harper with the appropriate role, or assign an existing user the `cache_user` or `super_user` role.
-2. Harper's built-in `super_user` role has full access. For restricted access, use `cache_user`.
+Requests authenticated with a user that does not hold the required role will be rejected. To grant access to a user:
+
+1. Create the user in Harper with the appropriate role, or assign an existing user one of the roles above.
+2. Harper's built-in `super_user` role has full access. For cache-only access use `cache_user`; for admin access use `cache_admin`.
 
 See [Configuring Roles](https://docs.harperdb.io/docs/reference/roles#configuring-roles) in the Harper documentation for how to create and assign custom roles.
 

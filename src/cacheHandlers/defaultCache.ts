@@ -1,170 +1,117 @@
-import type { CacheContent } from '../types/graphql.js';
-import { SPECIAL_TTL } from '../resources/ttlRules.js';
-import { classifyRequest, headerToCacheTags, isInvalidated } from '../util/cache.js';
+import { Resource } from 'harperdb';
+import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
 import { buildPageCacheKey } from '../util/cacheKeys.js';
-import {
-	buildUpstreamHeaders,
-	cacheGetObservabilityHeaders,
-	cachePutObservabilityHeaders,
-	normalizeHeaders,
-} from '../util/headers.js';
-import { CACHE_CONFIG, resolveOriginAuthHeader } from '../constants/index.js';
-import type { IncomingMessage } from 'http';
+import { buildDownstreamHeaders, cachePutObservabilityHeaders } from '../util/headers.js';
+import { CACHE_CONFIG, NO_BODY_RESPONSES } from '../constants/index.js';
 import type { TTLRuleMatchResult } from '../types/index.js';
-import { fetchFromOrigin } from '../util/originClient.js';
+import {
+	fetchFromOrigin,
+	OriginErrorResponse,
+	buildOriginUrl,
+	buildUpstreamRequestHeaders,
+} from '../util/originClient.js';
 
-const { CacheContent: CacheContentTable } = databases.DefaultCache;
+export const { CacheContent: CacheContentTable } = databases.DefaultCache;
 
-const originFetch = async (request: any, cacheKey: string, ttlConfig: TTLRuleMatchResult, startTime: number) => {
-	const path = request.url;
-	const origin = CACHE_CONFIG.defaultOrigin;
-	logger.info('Fetching from origin', origin, path);
+// Re-exports for index.ts orchestration
+export { buildPageCacheKey, classifyRequest };
 
-	let url = new URL(path, origin);
-	if (CACHE_CONFIG.defaultPathReplacement) {
-		url = new URL(
-			request.url!.replace(CACHE_CONFIG.defaultPathReplacement.search, CACHE_CONFIG.defaultPathReplacement.replace),
-			origin
-		);
-	}
+// WeakMap keyed on the request object so concurrent requests for the same cache key don't interfere
+const requestMissMap = new WeakMap<object, true>();
 
-	const upstreamHeaders = buildUpstreamHeaders(request.headers);
-	const originAuthHeader = resolveOriginAuthHeader('defaultOrigin');
-	if (originAuthHeader) {
-		upstreamHeaders[originAuthHeader.headerName] = originAuthHeader.token;
-	}
+const consumeWasMiss = (request: object): boolean => {
+	const wasMiss = requestMissMap.has(request);
+	requestMissMap.delete(request);
+	return wasMiss;
+};
 
-	const response = await fetchFromOrigin(url, { method: 'GET', headers: upstreamHeaders }); // Fetch the page content
+/**
+ * External data source for the DefaultCache.CacheContent table.
+ * Called by Harper on a cache miss; the returned record is stored automatically.
+ */
+export class DefaultCacheSource extends Resource {
+	async get() {
+		const cacheKey = this.getId() as string;
+		const request = this.request;
+		const url = buildOriginUrl(request, CACHE_CONFIG.defaultOrigin, CACHE_CONFIG.defaultPathReplacement);
 
-	// dont cache an unsuccessful response from origin
-	if (!response.ok) {
-		logger.warn('Skipped caching for: ', path);
-		server.recordAnalytics(performance.now() - startTime, 'http-no-cache', 'PageCache');
-		return new Response(response.body, {
-			status: response.status,
-			statusText: response.statusText,
-			headers: { 'content-type': 'text/html' },
+		logger.info('Fetching from origin', CACHE_CONFIG.defaultOrigin, request.url);
+
+		const response = await fetchFromOrigin(url, {
+			method: 'GET',
+			headers: buildUpstreamRequestHeaders(request, 'defaultOrigin'),
 		});
-	}
+		const responseHeaderObj = buildDownstreamHeaders(response.headers);
 
-	const normalizedHeaders = normalizeHeaders(response.headers);
-	const responseHeaderObj = new Headers(normalizedHeaders);
-	let streamForClient = response.body;
+		if (!response.ok) {
+			const body = NO_BODY_RESPONSES.has(response.status) ? null : response.body;
+			throw new OriginErrorResponse(
+				response.status,
+				response.statusText,
+				Object.fromEntries(responseHeaderObj.entries()),
+				body
+			);
+		}
 
-	const shouldCache = !!ttlConfig?.ruleId && ttlConfig?.policy !== SPECIAL_TTL.NO_CACHE;
-
-	// Only cache if we have a TTL rule
-	if (shouldCache) {
+		const ttlConfig = classifyRequest(request, cacheKey) as TTLRuleMatchResult;
 		const debugHeaders = cachePutObservabilityHeaders(request, ttlConfig, cacheKey);
+		const blob = response.body ? createBlob(response.body, { saveBeforeCommit: true }) : null;
 
-		if (request.headers.get('x-hdb-cache-debug')) {
-			Object.entries(debugHeaders).forEach(([k, v]) => responseHeaderObj.set(k, v));
-		}
+		// Mark this request as a cache miss so the caller can set the correct response headers
+		requestMissMap.set(request, true);
 
-		let expiresAt: number | undefined = Date.now() + ttlConfig.ttlSeconds * 1000;
-		if (ttlConfig.policy === SPECIAL_TTL.ORIGIN) {
-			const expires = responseHeaderObj.get('expires');
-			if (expires) expiresAt = new Date(expires).getTime();
-			else expiresAt = undefined;
-		} else if (ttlConfig.policy === SPECIAL_TTL.NEVER) {
-			expiresAt = undefined;
-		}
+		return {
+			data: blob,
+			headers: JSON.stringify(Object.fromEntries(responseHeaderObj.entries())),
+			debugHeaders: JSON.stringify(debugHeaders),
+			groupCode: ttlConfig.groupCode,
+			refreshedAt: Date.now(),
+			cacheTags: headerToCacheTags(responseHeaderObj),
+			url: url.href,
+		};
+	}
+}
 
-		const cacheHeaders = new Headers(normalizedHeaders);
-		cacheHeaders.delete('set-cookie');
+CacheContentTable.sourcedFrom(DefaultCacheSource);
 
-		if (response.body) {
-			const [cacheStream, responseStream] = response.body.tee();
-			streamForClient = responseStream;
+export const fetchCachedResponse = async (
+	request: any,
+	cacheKey: string,
+	cacheInvalidations: Record<string, number>,
+	startTime: number
+): Promise<Response> => {
+	const entry = await fetchCacheEntry(
+		CacheContentTable,
+		cacheKey,
+		cacheInvalidations,
+		'page',
+		startTime,
+		'DefaultCache'
+	);
 
-			const saveToCache = async () => {
-				const blob = await createBlob(cacheStream);
-				if (blob) {
-					await CacheContentTable.put(
-						cacheKey,
-						{
-							data: blob,
-							headers: JSON.stringify(Object.fromEntries(cacheHeaders.entries())),
-							debugHeaders: JSON.stringify(debugHeaders),
-							groupCode: ttlConfig.groupCode,
-							refreshedAt: Date.now(),
-							cacheTags: headerToCacheTags(cacheHeaders),
-							url: url.href,
-						},
-						{ expiresAt }
-					);
-				}
-			};
-			saveToCache().catch((err) => logger.error('Error saving page cache', cacheKey, err));
-		}
+	if (entry instanceof Response) {
+		return entry;
 	}
 
-	responseHeaderObj.set('x-hdb-cache', shouldCache ? 'miss' : 'no-cache');
-	responseHeaderObj.set('x-hdb', 'true');
+	const wasMiss = consumeWasMiss(request);
+	server.recordAnalytics(performance.now() - startTime, wasMiss ? 'cache-miss' : 'cache-hit', 'DefaultCache');
+	return buildCacheResponse(entry, request, cacheKey, wasMiss ? 'miss' : 'hit');
+};
 
-	return new Response(streamForClient ?? null, {
+/** Direct origin passthrough for non-cacheable requests — no table interaction. */
+export const originPassthrough = async (request: any, startTime: number): Promise<Response> => {
+	const url = buildOriginUrl(request, CACHE_CONFIG.defaultOrigin, CACHE_CONFIG.defaultPathReplacement);
+	const response = await fetchFromOrigin(url, {
+		method: 'GET',
+		headers: buildUpstreamRequestHeaders(request, 'defaultOrigin'),
+	});
+	const responseHeaderObj = buildDownstreamHeaders(response.headers);
+
+	server.recordAnalytics(performance.now() - startTime, 'http-no-cache', 'DefaultCache');
+	const body = NO_BODY_RESPONSES.has(response.status) ? null : response.body;
+	return new Response(body, {
 		status: response.status,
 		statusText: response.statusText,
 		headers: responseHeaderObj,
 	});
-};
-
-const cacheFetch = async (request: any, cacheKey: string) => {
-	logger.info('Fetching from cache', cacheKey);
-
-	const cacheResult: null | CacheContent = await CacheContentTable.get(cacheKey);
-
-	if (!cacheResult) {
-		logger.info('Cache miss', cacheKey);
-		return null;
-	}
-
-	let htmlContent;
-
-	try {
-		// Defensive read of the blob
-		htmlContent = await cacheResult.data.bytes();
-	} catch (err) {
-		logger.error('Error reading blob bytes for cache key', cacheKey, err);
-		return null; // fail gracefully
-	}
-
-	logger.info('Cache hit', cacheKey);
-
-	return {
-		response: new Response(htmlContent, {
-			status: 200,
-			headers: {
-				'x-hdb': 'true',
-				'x-hdb-cache': 'hit',
-				...JSON.parse(cacheResult.headers ?? '{}'),
-				...(request.headers.get('x-hdb-cache-debug')
-					? cacheGetObservabilityHeaders(request, cacheKey, cacheResult)
-					: {}),
-			},
-		}),
-		refreshedAt: cacheResult.refreshedAt,
-		groupCode: cacheResult.groupCode,
-	};
-};
-
-export const handleDefault = async (request: IncomingMessage, cacheInvalidations: Record<string, number>) => {
-	const startTime = performance.now();
-	const cacheKey = buildPageCacheKey(request);
-	const ttlConfig = classifyRequest(request, cacheKey);
-	const isCacheable = !!ttlConfig?.ruleId && request.headers['x-harper-cache-bypass'] !== 'true';
-
-	logger.info(
-		`Built cache key ${cacheKey} for path: ${request.url}. Determined to be ${isCacheable ? 'cacheable' : 'not cacheable'}.`
-	);
-
-	const cacheResult = isCacheable ? await cacheFetch(request, cacheKey) : null;
-	if (cacheResult && !isInvalidated('page', cacheInvalidations, cacheResult.refreshedAt!, cacheResult.groupCode)) {
-		server.recordAnalytics(performance.now() - startTime, 'cache-hit', 'DefaultCache');
-		return cacheResult.response;
-	}
-
-	const result = await originFetch(request, cacheKey, ttlConfig as TTLRuleMatchResult, startTime);
-	server.recordAnalytics(performance.now() - startTime, 'cache-miss', 'DefaultCache');
-	return result;
 };

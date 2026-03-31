@@ -1,3 +1,4 @@
+import { ALLOWED_ROLES_ADMIN } from '../constants/index.js';
 import type { TtlRules } from '../types/graphql.js';
 
 export enum CONDITION_OPERATOR {
@@ -48,7 +49,7 @@ const validateRule = (rule: TtlRules): string | undefined => {
 	}
 
 	// validate conditions
-	for (const criterion of rule?.additionalMatchCritera ?? []) {
+	for (const criterion of rule?.additionalMatchCriteria ?? []) {
 		if (criterion!.additionalMatchType && !Object.values(MATCH_TYPE).includes(criterion!.additionalMatchType)) {
 			return `Invalid additionalMatchType: ${criterion!.additionalMatchType}; must be one of ${Object.values(MATCH_TYPE).join(', ')}`;
 		}
@@ -72,6 +73,10 @@ const validateRule = (rule: TtlRules): string | undefined => {
 };
 
 export class TTLRules extends Resource {
+	allowCreate(user) {
+		return ALLOWED_ROLES_ADMIN.includes(user.role.role);
+	}
+
 	async post(data: TtlRules) {
 		const errorMsg = validateRule(data);
 		if (errorMsg) {

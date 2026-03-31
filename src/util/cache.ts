@@ -1,9 +1,74 @@
 import { CONDITION_OPERATOR, MATCH_TYPE, SPECIAL_TTL } from '../resources/ttlRules.js';
 import { headerGet } from './headers.js';
 import { CACHE_CONFIG } from '../constants/index.js';
-import type { TtlRules } from '../types/graphql.js';
+import type { TtlRules, CacheContent } from '../types/graphql.js';
+import { OriginErrorResponse } from './originClient.js';
 import type { TTLRuleMatchConditions, TTLRuleIndexEntry, TTLRulesIndex, TTLRuleMatchResult } from '../types/index.js';
 import type { IncomingMessage } from 'http';
+
+/**
+ * Fetches a cache entry from a Harper table, handling origin errors and soft invalidation.
+ * On an OriginErrorResponse, records analytics and returns a passthrough Response instead of throwing.
+ * On invalidation, evicts the stale entry and re-fetches so the source is called again.
+ */
+export const fetchCacheEntry = async (
+	table: any,
+	cacheKey: string,
+	cacheInvalidations: Record<string, number>,
+	invalidationType: 'page' | 'api',
+	startTime: number,
+	analyticsLabel: string
+): Promise<CacheContent | Response> => {
+	const getEntry = async (): Promise<CacheContent | Response> => {
+		try {
+			return await table.get(cacheKey);
+		} catch (err) {
+			if (err instanceof OriginErrorResponse) {
+				server.recordAnalytics(performance.now() - startTime, 'http-no-cache', analyticsLabel);
+				return new Response(err.body, { status: err.status, statusText: err.statusText, headers: err.headers });
+			}
+			throw err;
+		}
+	};
+
+	let entry = await getEntry();
+
+	if (
+		!(entry instanceof Response) &&
+		isInvalidated(invalidationType, cacheInvalidations, entry.refreshedAt!, entry.groupCode)
+	) {
+		await table.delete(cacheKey);
+		entry = await getEntry();
+	}
+
+	return entry;
+};
+
+export const buildCacheResponse = async (
+	entry: CacheContent,
+	request: any,
+	cacheKey: string,
+	cacheStatus: 'hit' | 'miss'
+): Promise<Response> => {
+	let body: Uint8Array | null;
+	try {
+		body = entry.data ? await entry.data.bytes() : null;
+	} catch (err) {
+		logger.error('Error reading cache entry blob', cacheKey, err);
+		body = null;
+	}
+	return new Response(body, {
+		status: 200,
+		headers: {
+			'x-harper': 'true',
+			...JSON.parse(entry.headers ?? '{}'),
+			'x-harper-cache': cacheStatus,
+			...(headerGet(request.headers, 'x-harper-cache-debug')
+				? cacheGetObservabilityHeaders(request, cacheKey, entry)
+				: {}),
+		},
+	});
+};
 
 // ---------------------------
 // --------- helpers ---------
@@ -209,7 +274,7 @@ const normalizePath = (pathname: string): string => {
 const normalizeConds = (rule: TtlRules): TTLRuleMatchConditions[] => {
 	const conds: TTLRuleMatchConditions[] = [];
 
-	(rule.additionalMatchCritera ?? []).forEach((criterion) => {
+	(rule.additionalMatchCriteria ?? []).forEach((criterion) => {
 		const type = (criterion!.additionalMatchType || '').toLowerCase(); // 'header' | 'query'
 		const op = (criterion!.additionalMatchOperator || '').toLowerCase(); // equals, contains, not_equals, not_contains, exists, not_exists
 		const keyRaw = criterion!.additionalMatchKey;
@@ -341,13 +406,13 @@ const applyOperator = (op: string, received: string | null, searchList?: string 
 		case CONDITION_OPERATOR.CONTAINS: {
 			if (!gotExists) return false;
 			if (!searchList || searchList.length === 0) return false;
-			return searchList.includes(received);
+			return searchList.some((s) => received.includes(s));
 		}
 
 		case CONDITION_OPERATOR.NOT_CONTAINS: {
 			if (!searchList || searchList.length === 0) return true;
 			if (!gotExists) return true;
-			return !searchList.includes(received);
+			return !searchList.some((s) => received.includes(s));
 		}
 
 		default:

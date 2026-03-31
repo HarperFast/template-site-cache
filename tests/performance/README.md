@@ -34,8 +34,8 @@ k6 run tests/performance/ramp-round-robin.test.js \
 - `MAX_VUS`: max VUs for arrival-rate executor.
 - `REQUEST_METHOD`: HTTP method (default `GET`).
 - `EXPECTED_STATUS`: check target status code (default `200`).
-- `SEND_HDB_AUTH`: send `x-hdb-authorization` header (`true` by default).
-- `HDB_ADMIN_USERNAME`, `HDB_ADMIN_PASSWORD`: credentials used for `x-hdb-authorization`.
+- `SEND_HDB_AUTH`: send `x-harper-authorization` header (`true` by default).
+- `HDB_ADMIN_USERNAME`, `HDB_ADMIN_PASSWORD`: credentials used for `x-harper-authorization`.
 - `REQUEST_BODY`: request body for methods with body.
 
 ## Harper Load Test Mode
