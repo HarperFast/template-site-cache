@@ -8,7 +8,7 @@ import {
 import { TTLRules, SPECIAL_TTL } from './resources/ttlRules.js';
 import { Invalidate } from './resources/cacheInvalidation.js';
 import type { CacheInvalidation } from './types/graphql.js';
-import { RESERVED_PATHS, CACHE_INVALIDATION_KEY, CACHE_CONFIG, ALLOWED_ROLES_CACHE } from './constants/index.js';
+import { RESERVED_PATHS, CACHE_INVALIDATION_KEY, CACHE_CONFIG, ALLOWED_ROLES_CACHE, HANDLER_TIMEOUT_MS } from './constants/index.js';
 import { decodeAuthHeader } from './util/auth.js';
 
 export const cache = { ttlConfig: TTLRules, invalidate: Invalidate };
@@ -44,7 +44,6 @@ const initializeCacheInvalidationSubscription = async () => {
 
 void initializeCacheInvalidationSubscription();
 
-const OUTER_TIMEOUT_MS = process.env.REQUEST_TIMEOUT_MS ? parseInt(process.env.REQUEST_TIMEOUT_MS, 10) : 30_000;
 
 const handleRequest = async (request: any) => {
 	const auth = request.headers.get('authorization');
@@ -94,7 +93,7 @@ server.http(
 		const timeoutPromise = new Promise<Response>((resolve) => {
 			timeoutId = setTimeout(
 				() => resolve(new Response('Gateway Timeout', { status: 504, statusText: 'Gateway Timeout' })),
-				OUTER_TIMEOUT_MS
+				HANDLER_TIMEOUT_MS
 			);
 		});
 

@@ -2,7 +2,7 @@ import { Resource } from 'harperdb';
 import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
 import { buildPageCacheKey } from '../util/cacheKeys.js';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders } from '../util/headers.js';
-import { CACHE_CONFIG, NO_BODY_RESPONSES } from '../constants/index.js';
+import { CACHE_CONFIG, NO_BODY_RESPONSES, HANDLER_TIMEOUT_MS } from '../constants/index.js';
 import type { TTLRuleMatchResult } from '../types/index.js';
 import {
 	fetchFromOrigin,
@@ -80,21 +80,17 @@ export const fetchCachedResponse = async (
 	cacheInvalidations: Record<string, number>,
 	startTime: number
 ): Promise<Response> => {
-	const entry = await fetchCacheEntry(
-		CacheContentTable,
-		cacheKey,
-		cacheInvalidations,
-		'page',
-		startTime,
-		'DefaultCache'
-	);
+	const entry = await fetchCacheEntry(CacheContentTable, cacheKey, cacheInvalidations, 'page');
+
+	const elapsed = () => Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS);
 
 	if (entry instanceof Response) {
+		server.recordAnalytics(elapsed(), 'http-no-cache', 'DefaultCache');
 		return entry;
 	}
 
 	const wasMiss = consumeWasMiss(request);
-	server.recordAnalytics(performance.now() - startTime, wasMiss ? 'cache-miss' : 'cache-hit', 'DefaultCache');
+	server.recordAnalytics(elapsed(), wasMiss ? 'cache-miss' : 'cache-hit', 'DefaultCache');
 	return buildCacheResponse(entry, request, cacheKey, wasMiss ? 'miss' : 'hit');
 };
 
@@ -107,7 +103,7 @@ export const originPassthrough = async (request: any, startTime: number): Promis
 	});
 	const responseHeaderObj = buildDownstreamHeaders(response.headers);
 
-	server.recordAnalytics(performance.now() - startTime, 'http-no-cache', 'DefaultCache');
+	server.recordAnalytics(Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS), 'http-no-cache', 'DefaultCache');
 	const body = NO_BODY_RESPONSES.has(response.status) ? null : response.body;
 	return new Response(body, {
 		status: response.status,

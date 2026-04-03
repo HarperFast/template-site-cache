@@ -1,7 +1,7 @@
 import { Resource } from 'harperdb';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders, headerGet } from '../util/headers.js';
 import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
-import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG } from '../constants/index.js';
+import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, HANDLER_TIMEOUT_MS } from '../constants/index.js';
 import { buildAPICacheKey } from '../util/cacheKeys.js';
 import { SPECIAL_TTL } from '../resources/ttlRules.js';
 import {
@@ -109,14 +109,17 @@ const fetchCachedAPIResponse = async (
 	cacheInvalidations: Record<string, number>,
 	startTime: number
 ): Promise<Response> => {
-	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api', startTime, 'APICache');
+	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api');
+
+	const elapsed = () => Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS);
 
 	if (entry instanceof Response) {
+		server.recordAnalytics(elapsed(), 'http-no-cache', 'APICache');
 		return entry;
 	}
 
 	const wasMiss = consumeWasMiss(cacheKey);
-	server.recordAnalytics(performance.now() - startTime, wasMiss ? 'cache-miss' : 'cache-hit', 'APICache');
+	server.recordAnalytics(elapsed(), wasMiss ? 'cache-miss' : 'cache-hit', 'APICache');
 	return buildCacheResponse(entry, request, cacheKey, wasMiss ? 'miss' : 'hit');
 };
 
@@ -149,7 +152,7 @@ export const handleAPI = async (request: any, cacheInvalidations: Record<string,
 	const response = await fetchFromOrigin(url, init);
 	const headers = buildDownstreamHeaders(response.headers);
 
-	server.recordAnalytics(performance.now() - startTime, 'no-cache', 'APICache');
+	server.recordAnalytics(Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS), 'no-cache', 'APICache');
 
 	const body = !NO_BODY_RESPONSES.has(response.status) ? (response.body as BodyInit) : null;
 	return new Response(body, { status: response.status, statusText: response.statusText, headers });

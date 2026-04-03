@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+export const HANDLER_TIMEOUT_MS = process.env.REQUEST_TIMEOUT_MS ? parseInt(process.env.REQUEST_TIMEOUT_MS, 10) : 30_000;
 export const KEY_OVERFLOW = 1000; // max key size before hashing
 export const NO_BODY_RESPONSES = new Set([204, 304]); // HTTP status codes that must not have a body
 export const METHODS_WITH_BODY = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

@@ -8,23 +8,20 @@ import type { IncomingMessage } from 'http';
 
 /**
  * Fetches a cache entry from a Harper table, handling origin errors and soft invalidation.
- * On an OriginErrorResponse, records analytics and returns a passthrough Response instead of throwing.
+ * On an OriginErrorResponse, returns a passthrough Response instead of throwing (caller records analytics).
  * On invalidation, evicts the stale entry and re-fetches so the source is called again.
  */
 export const fetchCacheEntry = async (
 	table: any,
 	cacheKey: string,
 	cacheInvalidations: Record<string, number>,
-	invalidationType: 'page' | 'api',
-	startTime: number,
-	analyticsLabel: string
+	invalidationType: 'page' | 'api'
 ): Promise<CacheContent | Response> => {
 	const getEntry = async (): Promise<CacheContent | Response> => {
 		try {
 			return await table.get(cacheKey);
 		} catch (err) {
 			if (err instanceof OriginErrorResponse) {
-				server.recordAnalytics(performance.now() - startTime, 'http-no-cache', analyticsLabel);
 				return new Response(err.body, { status: err.status, statusText: err.statusText, headers: err.headers });
 			}
 			throw err;
