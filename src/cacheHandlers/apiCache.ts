@@ -1,4 +1,4 @@
-import { Resource } from 'harperdb';
+import { Resource } from 'harper';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders, headerGet } from '../util/headers.js';
 import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
 import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, HANDLER_TIMEOUT_MS } from '../constants/index.js';
