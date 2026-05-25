@@ -62,9 +62,9 @@ const readRequestBody = async (request: any) => {
  * Called by Harper on a cache miss; the returned record is stored automatically.
  */
 export class APICacheSource extends Resource {
-	async get() {
-		const cacheKey = this.getId() as string;
-		const request = this.request;
+	static async get(target: any, context: any) {
+		const cacheKey = target.id as string;
+		const request = context.request;
 		const url = buildOriginUrl(request, CACHE_CONFIG.apiOrigin, CACHE_CONFIG.apiPathReplacement);
 
 		const response = await fetchFromOrigin(url, {
