@@ -52,7 +52,8 @@ export class Invalidate extends Resource {
 		return ALLOWED_ROLES_ADMIN.includes(user.role.role);
 	}
 
-	async post(body: CacheInvalidationRequest) {
+	static async post(target: any, data: Promise<CacheInvalidationRequest>, context: any) {
+		const body = await data;
 		const type = body.type;
 		if (!['api', 'page', 'cacheTag', 'url'].includes(type)) {
 			return { status: 400, data: `Unknown invalidation request for type "${type}" received.` };

@@ -6,13 +6,13 @@
 	"scripts": {
 		"generate:types": "graphql-codegen --config codegen.ts",
 		"build": "tsc",
-		"dev": "tsc; harperdb dev .",
+		"dev": "tsc; harper dev .",
 		"test:unit": "node --test --import tsx tests/unit/*.test.ts",
 		"test:integration": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
 		"lint": "eslint src",
 		"format": "prettier --write .",
-		"postinstall": "npm link harperdb",
-		"postuninstall": "npm link harperdb"
+		"postinstall": "npm link harper",
+		"postuninstall": "npm link harper"
 	},
 	"prettier": "@harperdb/code-guidelines/prettier",
 	"author": "HarperDB, Inc.",

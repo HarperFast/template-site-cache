@@ -77,7 +77,8 @@ export class TTLRules extends Resource {
 		return ALLOWED_ROLES_ADMIN.includes(user.role.role);
 	}
 
-	async post(data: TtlRules) {
+	static async post(target: any, data: Promise<TtlRules>, context: any) {
+		data = await data;
 		const errorMsg = validateRule(data);
 		if (errorMsg) {
 			return {
@@ -92,7 +93,8 @@ export class TTLRules extends Resource {
 		};
 	}
 
-	async put(data: TtlRules) {
+	static async put(target: any, data: Promise<TtlRules>, context: any) {
+		data = await data;
 		const errorMsg = validateRule(data);
 		if (errorMsg) {
 			return {
@@ -101,7 +103,7 @@ export class TTLRules extends Resource {
 			};
 		}
 
-		const id = this.getContext()._nodeRequest.url.split('/').pop();
+		const id = target.id;
 		await databases.CacheManagement.TTLRules.put(id, data);
 		return {
 			status: 204,

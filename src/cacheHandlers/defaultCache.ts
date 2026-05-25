@@ -1,4 +1,4 @@
-import { Resource } from 'harperdb';
+import { Resource } from 'harper';
 import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
 import { buildPageCacheKey } from '../util/cacheKeys.js';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders } from '../util/headers.js';
@@ -30,9 +30,9 @@ const consumeWasMiss = (request: object): boolean => {
  * Called by Harper on a cache miss; the returned record is stored automatically.
  */
 export class DefaultCacheSource extends Resource {
-	async get() {
-		const cacheKey = this.getId() as string;
-		const request = this.request;
+	static async get(target: any, context: any) {
+		const cacheKey = target.id as string;
+		const request = context.request;
 		const url = buildOriginUrl(request, CACHE_CONFIG.defaultOrigin, CACHE_CONFIG.defaultPathReplacement);
 
 		logger.info('Fetching from origin', CACHE_CONFIG.defaultOrigin, request.url);
