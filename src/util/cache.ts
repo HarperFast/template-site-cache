@@ -27,7 +27,18 @@ export const resolveSourceRequest = (resource: any): any => {
 		seen.add(ctx);
 		if (ctx.request?.url) return ctx.request;
 		if (typeof ctx.url === 'string') return ctx;
-		ctx = ctx.requestContext;
+		ctx = ctx.requestContext ?? ctx.getContext?.();
+	}
+
+	if (!direct?.url) {
+		const top = resource?.getContext?.();
+		logger.warn(
+			'resolveSourceRequest: could not locate originating request',
+			'topKeys=',
+			top && typeof top === 'object' ? Object.keys(top) : typeof top,
+			'requestContextKeys=',
+			top?.requestContext && typeof top.requestContext === 'object' ? Object.keys(top.requestContext) : typeof top?.requestContext
+		);
 	}
 	return direct;
 };
@@ -41,11 +52,14 @@ export const fetchCacheEntry = async (
 	table: any,
 	cacheKey: string,
 	cacheInvalidations: Record<string, number>,
-	invalidationType: 'page' | 'api'
+	invalidationType: 'page' | 'api',
+	request?: any
 ): Promise<CacheContent | Response> => {
 	const getEntry = async (): Promise<CacheContent | Response> => {
 		try {
-			return await table.get(cacheKey);
+			// Pass the originating request as the get() context so the cache SOURCE's instance
+			// get() can recover it (via getContext().requestContext) to build the origin URL.
+			return await table.get(cacheKey, request);
 		} catch (err) {
 			if (err instanceof OriginErrorResponse) {
 				return new Response(err.body, { status: err.status, statusText: err.statusText, headers: err.headers });

@@ -90,7 +90,7 @@ export const fetchCachedResponse = async (
 	cacheInvalidations: Record<string, number>,
 	startTime: number
 ): Promise<Response> => {
-	const entry = await fetchCacheEntry(CacheContentTable, cacheKey, cacheInvalidations, 'page');
+	const entry = await fetchCacheEntry(CacheContentTable, cacheKey, cacheInvalidations, 'page', request);
 
 	const elapsed = () => Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS);
 

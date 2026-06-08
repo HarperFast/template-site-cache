@@ -119,7 +119,7 @@ const fetchCachedAPIResponse = async (
 	cacheInvalidations: Record<string, number>,
 	startTime: number
 ): Promise<Response> => {
-	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api');
+	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api', request);
 
 	const elapsed = () => Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS);
 
