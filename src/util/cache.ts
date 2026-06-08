@@ -63,7 +63,9 @@ export const fetchCacheEntry = async (
 		!(entry instanceof Response) &&
 		isInvalidated(invalidationType, cacheInvalidations, entry.refreshedAt!, entry.groupCode)
 	) {
-		await table.delete(cacheKey);
+		// Sourced cache table: invalidate (not delete) the local copy so the next get re-fetches
+		// from the source. delete() would delegate to the source, which implements no delete.
+		await table.invalidate(cacheKey);
 		entry = await getEntry();
 	}
 
