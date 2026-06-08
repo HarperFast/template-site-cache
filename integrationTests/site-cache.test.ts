@@ -46,8 +46,6 @@ const ORIGIN_PORT = Number(process.env.MOCK_ORIGIN_PORT || 47185);
 const ORIGIN_URL = `http://127.0.0.1:${ORIGIN_PORT}`;
 const ENV_NAME = 'harnesstest';
 
-const ADMIN = { username: 'HDB_ADMIN', password: 'password' };
-
 let originServer: Server;
 let originHits = new Map<string, number>();
 let fixtureDir: string;
@@ -93,6 +91,15 @@ const buildFixture = () => {
 	cpSync(join(REPO_ROOT, 'src', 'db'), join(appDir, 'src', 'db'), { recursive: true });
 	cpSync(join(REPO_ROOT, 'config.yaml'), join(appDir, 'config.yaml'));
 
+	// The built component imports `undici` at runtime. Harper's v5 module loader resolves
+	// dependencies relative to the component directory, so vendor the (dependency-free) undici
+	// package into the fixture's node_modules and declare it in a package.json.
+	cpSync(join(REPO_ROOT, 'node_modules', 'undici'), join(appDir, 'node_modules', 'undici'), { recursive: true });
+	writeFileSync(
+		join(appDir, 'package.json'),
+		JSON.stringify({ name: 'site-cache', version: '1.0.0', type: 'module', dependencies: { undici: '*' } }, null, 2)
+	);
+
 	// Origin configuration consumed by the component (selected via ENVIRONMENT).
 	const cacheConfig = {
 		cacheTagsHeader: 'X-Origin-Cache-Tags',
@@ -117,16 +124,19 @@ const buildFixture = () => {
 	return appDir;
 };
 
-const authHeader = `Basic ${Buffer.from(`${ADMIN.username}:${ADMIN.password}`).toString('base64')}`;
-
 suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 	let httpURL: string;
+	let authHeader: string;
 
 	before(async () => {
 		await startMockOrigin();
 		const appDir = buildFixture();
 		await setupHarperWithFixture(ctx, appDir, { harperBinPath });
 		httpURL = ctx.harper.httpURL.replace(/\/$/, '');
+		// The component authenticates via server.authenticateUser; use the instance's admin
+		// (a super_user, which satisfies both ALLOWED_ROLES_CACHE and ALLOWED_ROLES_ADMIN).
+		const { username, password } = ctx.harper.admin;
+		authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 		// Configure a TTL rule so page requests under /page/ are cacheable.
 		const ttlRes = await fetch(`${httpURL}/cache/ttlConfig`, {
 			method: 'POST',
