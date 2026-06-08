@@ -88,7 +88,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Load HarperDB and Node.js versions
+      - name: Load Harper and Node.js versions
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" != "workflow_dispatch" ]]; then

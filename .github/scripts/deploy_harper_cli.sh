@@ -29,7 +29,7 @@ cat config.yaml
 echo "Contents of dist dir"
 ls -la dist/
 
-harperdb deploy target=$TARGET replicated=$REPLICATED restart=$RESTART
+harper deploy target=$TARGET replicated=$REPLICATED restart=$RESTART
 
 # Wait for the container to be ready after restart
 .github/scripts/wait_harper_ready.sh "$CONTAINER_NAME"

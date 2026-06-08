@@ -261,7 +261,7 @@ Set the `ENVIRONMENT` variable wherever your Harper process is launched. Example
 **Shell / systemd:**
 
 ```bash
-ENVIRONMENT=prod harperdb run .
+ENVIRONMENT=prod harper run .
 ```
 
 **Docker:**
@@ -560,7 +560,7 @@ Harper must be running with `ENVIRONMENT=integration` (loads `cacheConfiguration
 ```bash
 # Shell running Harper
 export ENVIRONMENT=integration
-harperdb run .
+harper run .
 ```
 
 The mock origin host and port are configurable via env vars in the test shell if your network differs from the defaults (e.g. non-Docker local setups):

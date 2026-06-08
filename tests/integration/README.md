@@ -12,7 +12,7 @@ Use two terminals.
 export ENVIRONMENT=integration
 
 # start Harper in your normal way, for example:
-harperdb dev .
+harper dev .
 ```
 
 If Harper was already running, restart it after setting `ENVIRONMENT`.

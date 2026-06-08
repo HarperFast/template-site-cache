@@ -15,7 +15,8 @@ if [ -z "$HDB_VERSION" ] || [ -z "$HDB_ADMIN_USERNAME" ] || [ -z "$HDB_ADMIN_PAS
 fi
 
 echo "Installing Harper version: $HDB_VERSION"
-npm install -g harperdb@$HDB_VERSION
+# Harper v5 renamed the npm package and CLI from `harperdb` to `harper`.
+npm install -g harper@$HDB_VERSION
 
 mkdir -p /tmp/hdb
 
@@ -24,4 +25,4 @@ export ROOTPATH=/tmp/hdb
 export HDB_ADMIN_USERNAME=$HDB_ADMIN_USERNAME
 export HDB_ADMIN_PASSWORD=$HDB_ADMIN_PASSWORD
 export OPERATIONSAPI_NETWORK_PORT=9925
-harperdb install
+harper install

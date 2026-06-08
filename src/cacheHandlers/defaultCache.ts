@@ -30,9 +30,13 @@ const consumeWasMiss = (request: object): boolean => {
  * Called by Harper on a cache miss; the returned record is stored automatically.
  */
 export class DefaultCacheSource extends Resource {
-	static async get(target: any, context: any) {
-		const cacheKey = target.id as string;
-		const request = context.request;
+	// Cache sources MUST use an instance get() — Harper instantiates the source per-id on a cache
+	// miss and invokes the instance method (see harper's reference SimpleCacheSource). Converting
+	// this to `static get()` silently breaks caching: the source is never invoked, raw records are
+	// stored, and responses come back with no ETag/304 conditional handling.
+	async get() {
+		const cacheKey = this.getId() as string;
+		const request = (this as any).request;
 		const url = buildOriginUrl(request, CACHE_CONFIG.defaultOrigin, CACHE_CONFIG.defaultPathReplacement);
 
 		logger.info('Fetching from origin', CACHE_CONFIG.defaultOrigin, request.url);
