@@ -7,6 +7,32 @@ import type { TTLRuleMatchConditions, TTLRuleIndexEntry, TTLRulesIndex, TTLRuleM
 import type { IncomingMessage } from 'http';
 
 /**
+ * Resolve the originating HTTP request inside a cache SOURCE's instance `get()`.
+ *
+ * Harper v5 invokes a `sourcedFrom` source by instantiating it per-id and calling the instance
+ * `get()`. The source instance's context is a dedicated source context that links back to the
+ * originating request context via `requestContext` (see harper's Table source loader). The Fetch
+ * request and the request context are the same object in `server.http`, so the request (carrying
+ * `.url`/`.headers`, needed to build the origin URL) is found by walking the context chain for the
+ * first object exposing a `url`. v4 exposed this directly as `this.request`; keep that as a
+ * fallback for compatibility.
+ */
+export const resolveSourceRequest = (resource: any): any => {
+	const direct = resource?.request;
+	if (direct?.url) return direct;
+
+	const seen = new Set<any>();
+	let ctx = resource?.getContext?.();
+	while (ctx && typeof ctx === 'object' && !seen.has(ctx)) {
+		seen.add(ctx);
+		if (ctx.request?.url) return ctx.request;
+		if (typeof ctx.url === 'string') return ctx;
+		ctx = ctx.requestContext;
+	}
+	return direct;
+};
+
+/**
  * Fetches a cache entry from a Harper table, handling origin errors and soft invalidation.
  * On an OriginErrorResponse, returns a passthrough Response instead of throwing (caller records analytics).
  * On invalidation, evicts the stale entry and re-fetches so the source is called again.

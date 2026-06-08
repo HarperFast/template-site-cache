@@ -1,6 +1,12 @@
 import { Resource } from 'harper';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders, headerGet } from '../util/headers.js';
-import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
+import {
+	classifyRequest,
+	headerToCacheTags,
+	fetchCacheEntry,
+	buildCacheResponse,
+	resolveSourceRequest,
+} from '../util/cache.js';
 import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, HANDLER_TIMEOUT_MS } from '../constants/index.js';
 import { buildAPICacheKey } from '../util/cacheKeys.js';
 import { SPECIAL_TTL } from '../resources/ttlRules.js';
@@ -68,7 +74,7 @@ export class APICacheSource extends Resource {
 	// stored, and responses come back with no ETag/304 conditional handling.
 	async get() {
 		const cacheKey = this.getId() as string;
-		const request = (this as any).request;
+		const request = resolveSourceRequest(this);
 		const url = buildOriginUrl(request, CACHE_CONFIG.apiOrigin, CACHE_CONFIG.apiPathReplacement);
 
 		const response = await fetchFromOrigin(url, {

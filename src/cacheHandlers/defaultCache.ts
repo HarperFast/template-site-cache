@@ -1,5 +1,11 @@
 import { Resource } from 'harper';
-import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
+import {
+	classifyRequest,
+	headerToCacheTags,
+	fetchCacheEntry,
+	buildCacheResponse,
+	resolveSourceRequest,
+} from '../util/cache.js';
 import { buildPageCacheKey } from '../util/cacheKeys.js';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders } from '../util/headers.js';
 import { CACHE_CONFIG, NO_BODY_RESPONSES, HANDLER_TIMEOUT_MS } from '../constants/index.js';
@@ -36,7 +42,7 @@ export class DefaultCacheSource extends Resource {
 	// stored, and responses come back with no ETag/304 conditional handling.
 	async get() {
 		const cacheKey = this.getId() as string;
-		const request = (this as any).request;
+		const request = resolveSourceRequest(this);
 		const url = buildOriginUrl(request, CACHE_CONFIG.defaultOrigin, CACHE_CONFIG.defaultPathReplacement);
 
 		logger.info('Fetching from origin', CACHE_CONFIG.defaultOrigin, request.url);
