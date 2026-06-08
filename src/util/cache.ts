@@ -29,17 +29,6 @@ export const resolveSourceRequest = (resource: any): any => {
 		if (typeof ctx.url === 'string') return ctx;
 		ctx = ctx.requestContext ?? ctx.getContext?.();
 	}
-
-	if (!direct?.url) {
-		const top = resource?.getContext?.();
-		logger.warn(
-			'resolveSourceRequest: could not locate originating request',
-			'topKeys=',
-			top && typeof top === 'object' ? Object.keys(top) : typeof top,
-			'requestContextKeys=',
-			top?.requestContext && typeof top.requestContext === 'object' ? Object.keys(top.requestContext) : typeof top?.requestContext
-		);
-	}
 	return direct;
 };
 

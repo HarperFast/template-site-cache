@@ -212,9 +212,13 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 		assert.equal(hitsFor('GET', originPath) - before, 1, 'conditional/cached hit must not re-invoke the source');
 	});
 
-	test('invalidation evicts the entry and the next request re-invokes the source then re-caches', async () => {
+	test('cacheTag invalidation evicts the entry, then the source is re-invoked and re-cached', async () => {
+		// cacheTag invalidation deletes matching records from the table directly (a deterministic
+		// eviction), then the next request must re-invoke the SOURCE (origin hit increments) and
+		// re-populate the cache — exercising the full miss -> source -> store -> hit cycle again.
 		const reqPath = '/page/invalidation?sort=popular&page=1&filter=shirts';
 		const originPath = '/page/invalidation';
+		const cacheTag = `tag:${originPath.replace(/\//g, '_')}`;
 		const before = hitsFor('GET', originPath);
 
 		const miss = await harperGet(reqPath, PAGE_HEADERS);
@@ -228,12 +232,11 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 		const inv = await fetch(`${httpURL}/cache/invalidate`, {
 			method: 'POST',
 			headers: { 'content-type': 'application/json', 'authorization': authHeader },
-			body: JSON.stringify({ type: 'page' }),
+			body: JSON.stringify({ type: 'cacheTag', cacheTag }),
 		});
-		assert.equal(inv.status, 200);
+		assert.equal(inv.status, 200, `cacheTag invalidation failed: ${inv.status}`);
 
-		// After invalidation the next request must re-invoke the source (origin hit increments),
-		// then a subsequent request is a fresh hit served from the re-populated cache.
+		// The deleted record forces a cache miss on the next request, which re-invokes the source.
 		const deadline = Date.now() + 30_000;
 		let sawMiss = false;
 		while (Date.now() < deadline) {
@@ -245,7 +248,7 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 			}
 			await new Promise((r) => setTimeout(r, 250));
 		}
-		assert.ok(sawMiss, 'invalidation should force a cache miss');
+		assert.ok(sawMiss, 'cacheTag invalidation should force a cache miss');
 		assert.ok(hitsFor('GET', originPath) - before >= 2, 'source must be re-invoked after invalidation');
 
 		const refreshed = await harperGet(reqPath, PAGE_HEADERS);
