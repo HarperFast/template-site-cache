@@ -49,6 +49,7 @@ const ENV_NAME = 'harnesstest';
 let originServer: Server;
 let originHits = new Map<string, number>();
 let fixtureDir: string;
+let configPath: string;
 
 const PAGE_HEADERS = { 'device-type': 'desktop', 'accept-language': 'en-US', 'cookie': 'brand=ae' };
 
@@ -118,8 +119,12 @@ const buildFixture = () => {
 			includeCookies: ['brand'],
 		},
 	};
-	writeFileSync(join(appDir, `cacheConfiguration.${ENV_NAME}.json`), JSON.stringify(cacheConfig, null, 2));
-	writeFileSync(join(appDir, '.env'), `ENVIRONMENT=${ENV_NAME}\n`);
+	// constants/index.ts resolves cacheConfiguration.<env>.json from process.cwd(), which for the
+	// Harper process is the repo root (where the test runner is invoked) — not the component dir.
+	// Write the config there; ENVIRONMENT is provided to the Harper process via the harness `env`
+	// option so the selector is set before the component's top-level code runs.
+	configPath = join(REPO_ROOT, `cacheConfiguration.${ENV_NAME}.json`);
+	writeFileSync(configPath, JSON.stringify(cacheConfig, null, 2));
 
 	return appDir;
 };
@@ -131,7 +136,7 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 	before(async () => {
 		await startMockOrigin();
 		const appDir = buildFixture();
-		await setupHarperWithFixture(ctx, appDir, { harperBinPath });
+		await setupHarperWithFixture(ctx, appDir, { harperBinPath, env: { ENVIRONMENT: ENV_NAME } });
 		httpURL = ctx.harper.httpURL.replace(/\/$/, '');
 		// The component authenticates via server.authenticateUser; use the instance's admin
 		// (a super_user, which satisfies both ALLOWED_ROLES_CACHE and ALLOWED_ROLES_ADMIN).
@@ -157,6 +162,7 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 		await teardownHarper(ctx);
 		await new Promise<void>((r) => originServer?.close(() => r()));
 		if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
+		if (configPath) rmSync(configPath, { force: true });
 	});
 
 	const harperGet = (path: string, headers: Record<string, string> = {}) =>
