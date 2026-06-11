@@ -8,8 +8,8 @@
 		"build": "tsc",
 		"dev": "tsc; harper dev .",
 		"test:unit": "node --test --import tsx tests/unit/*.test.ts",
-		"test:integration": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
-		"test:integration:harness": "harper-integration-test-run integrationTests/**/*.test.ts",
+		"test:integration": "harper-integration-test-run integrationTests/**/*.test.ts",
+		"test:integration:legacy": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
 		"lint": "eslint src",
 		"format": "prettier --write ."
 	},
