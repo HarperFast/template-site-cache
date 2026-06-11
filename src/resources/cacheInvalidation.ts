@@ -24,7 +24,7 @@ const handleDeletes = async (
 		// These tables are caches sourcedFrom a source resource. In v5, delete() on a sourced
 		// cache table delegates to the source (which has no delete) and throws; invalidate()
 		// evicts the local cached copy and forces a re-fetch from the source on the next get.
-		table.invalidate(record.cacheKey);
+		await table.invalidate(record.cacheKey);
 	}
 };
 

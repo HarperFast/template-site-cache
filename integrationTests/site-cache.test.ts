@@ -212,6 +212,31 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 		assert.equal(hitsFor('GET', originPath) - before, 1, 'conditional/cached hit must not re-invoke the source');
 	});
 
+	test('conditional request with matching If-None-Match returns 304 with no body', async () => {
+		const reqPath = '/page/conditional-304?sort=popular&page=1&filter=shirts';
+		// Prime the cache.
+		const miss = await harperGet(reqPath, PAGE_HEADERS);
+		assert.equal(miss.status, 200);
+		assert.equal(miss.headers.get('x-harper-cache'), 'miss');
+		const etag = miss.headers.get('etag');
+		assert.ok(etag, 'ETag must be present in the miss response');
+		await miss.text();
+
+		// Cache hit first to ensure the entry is stored.
+		const hit = await harperGet(reqPath, PAGE_HEADERS);
+		assert.equal(hit.status, 200);
+		assert.equal(hit.headers.get('x-harper-cache'), 'hit');
+		const hitEtag = hit.headers.get('etag');
+		assert.equal(hitEtag, etag, 'cached hit must preserve the origin ETag');
+		await hit.text();
+
+		// Conditional revalidation: If-None-Match should return 304 with no body.
+		const conditional = await harperGet(reqPath, { ...PAGE_HEADERS, 'if-none-match': etag! });
+		assert.equal(conditional.status, 304, `expected 304 for matching If-None-Match, got ${conditional.status}`);
+		const condBody = await conditional.text();
+		assert.equal(condBody, '', '304 response must have no body');
+	});
+
 	test('cacheTag invalidation evicts the entry, then the source is re-invoked and re-cached', async () => {
 		// cacheTag invalidation deletes matching records from the table directly (a deterministic
 		// eviction), then the next request must re-invoke the SOURCE (origin hit increments) and
