@@ -36,10 +36,9 @@ const consumeWasMiss = (request: object): boolean => {
  * Called by Harper on a cache miss; the returned record is stored automatically.
  */
 export class DefaultCacheSource extends Resource {
-	// Cache sources MUST use an instance get() — Harper instantiates the source per-id on a cache
-	// miss and invokes the instance method (see harper's reference SimpleCacheSource). Converting
-	// this to `static get()` silently breaks caching: the source is never invoked, raw records are
-	// stored, and responses come back with no ETag/304 conditional handling.
+	// Uses the standard instance get() Resource pattern: on a cache miss Harper instantiates the
+	// source per-id and invokes the instance method, exposing the id via this.getId() and the
+	// originating request via this.getContext() (matching Harper's own reference cache source).
 	async get() {
 		const cacheKey = this.getId() as string;
 		const request = resolveSourceRequest(this);

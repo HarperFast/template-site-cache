@@ -29,6 +29,10 @@ export const resolveSourceRequest = (resource: any): any => {
 		if (typeof ctx.url === 'string') return ctx;
 		ctx = ctx.requestContext ?? ctx.getContext?.();
 	}
+	if (!direct)
+		throw new Error(
+			`resolveSourceRequest: could not resolve originating request from resource context (id=${resource?.getId?.()})`
+		);
 	return direct;
 };
 

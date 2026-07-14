@@ -3,19 +3,22 @@
  * instance started by @harperfast/integration-testing (no Docker image required).
  *
  * These tests specifically guard the v5 caching-source contract: a cache table that is
- * `sourcedFrom` a Resource must invoke the source's INSTANCE `get()` on a miss. A prior
- * migration converted the source to a `static get()`, which silently breaks caching (the
- * source is never invoked, raw records are stored, and conditional/304 handling is lost).
+ * `sourcedFrom` a Resource invokes the source's `get()` on a miss (this component uses the
+ * standard instance `get()` pattern, matching Harper's reference cache source), stores the
+ * returned record, and serves subsequent requests from the store.
  *
  * Coverage:
  *  - cache MISS invokes the source exactly once (origin is hit), response served.
  *  - subsequent request is a cache HIT served from the store WITHOUT re-invoking the source
- *    (origin hit count unchanged) — the cached-hit / "served-without-revalidation" path that
- *    a broken static source would regress.
- *  - a conditional request (If-None-Match against the stored ETag) returns 304 Not Modified
- *    with no body — the real conditional-hit path.
+ *    (origin hit count unchanged) — the cached-hit / "served-without-revalidation" path.
+ *  - a cache HIT preserves the origin ETag on the response (the conditional-revalidation
+ *    primitive a downstream client/CDN uses), served without re-invoking the source.
  *  - explicit invalidation evicts the entry; the next request re-invokes the source and
  *    re-caches (origin hit count increments, then a fresh hit is served).
+ *
+ * NOTE: server-side If-None-Match / 304 conditional handling is NOT implemented at the
+ * component layer, so that path is covered by a skipped test (see below) rather than an
+ * assertion; the component only proxies the origin's ETag into the cached response.
  *
  * The component fixture is assembled from the freshly built `dist/` so the test always runs
  * the current source. A local mock origin (started in-process) stands in for the upstream.
@@ -214,9 +217,10 @@ suite('site-cache component (Harper v5)', (ctx: ContextWithHarper) => {
 
 	test('conditional request with matching If-None-Match returns 304 with no body', async (t) => {
 		// The site-cache component proxies origin responses but does not implement
-		// server-side If-None-Match / 304 conditional handling at the component layer
-		// (see src/cacheHandlers/defaultCache.ts — "no ETag/304 conditional handling").
-		// This test is skipped until conditional response support is added to the component.
+		// server-side If-None-Match / 304 conditional handling at the component layer:
+		// the cache handlers build their own 200 Response and never compare a request's
+		// If-None-Match against the stored ETag. This test is skipped until conditional
+		// response support is added to the component.
 		t.skip('site-cache component does not yet implement If-None-Match / 304 conditional responses');
 	});
 
