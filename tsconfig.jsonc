@@ -1,5 +1,5 @@
 // This is an example tsconfig file to be used as a base for TypeScript projects.
-// It extends the HarperDB code guidelines for Node.js projects.
+// It extends the Harper code guidelines for Node.js projects.
 // Remove these comments and change file to `.json` for use in your project (keep at root level).
 {
 	"extends": "@harperdb/code-guidelines/tsconfig.node.json",
@@ -9,7 +9,7 @@
 		"rootDir": "./src",
 		"baseUrl": ".",
 		"paths": {
-			"harperdb": ["./src/harper.d.ts"],
+			"harper": ["./src/harper.d.ts"],
 		},
 		"noImplicitAny": false,
 		"target": "ES2022",

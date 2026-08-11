@@ -20,9 +20,16 @@ const handleDeletes = async (
 		select: ['cacheKey'],
 	});
 
+	// These tables are caches sourcedFrom a source resource. In v5, delete() on a sourced
+	// cache table delegates to the source (which has no delete) and throws; invalidate()
+	// evicts the local cached copy and forces a re-fetch from the source on the next get.
+	// Invalidations are issued as the matches stream in and awaited together, so a tag/url
+	// matching many records does not pay one round-trip per record.
+	const pending: Promise<void>[] = [];
 	for await (const record of it) {
-		table.delete(record.cacheKey);
+		pending.push(table.invalidate(record.cacheKey));
 	}
+	await Promise.all(pending);
 };
 
 const handleCacheTagRecordDeletion = async (cacheTag?: string): Promise<(string | number)[]> => {

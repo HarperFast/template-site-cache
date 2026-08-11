@@ -2,7 +2,7 @@
 
 set -e
 
-echo "Detecting global HarperDB and Node.js versions..."
+echo "Detecting global Harper and Node.js versions..."
 
 # Output file
 VERSION_FILE=".github/config/versions.txt"
@@ -11,8 +11,8 @@ VERSION_FILE=".github/config/versions.txt"
 NODE_VERSION_FULL=$(node -v 2>/dev/null || echo "unknown")
 NODE_VERSION=${NODE_VERSION_FULL#v}
 
-# Get global HarperDB version
-HDB_VERSION=$(npm list -g harperdb --depth=0 2>/dev/null | grep 'harperdb@' | sed -E 's/.*harperdb@([^ ]+).*/\1/' || echo "not_found")
+# Get global Harper version (v5 package/CLI is `harper`, was `harperdb` in v4)
+HDB_VERSION=$(npm list -g harper --depth=0 2>/dev/null | grep 'harper@' | sed -E 's/.*harper@([^ ]+).*/\1/' || echo "not_found")
 
 # Write to versions.txt
 cat <<EOF > "$VERSION_FILE"

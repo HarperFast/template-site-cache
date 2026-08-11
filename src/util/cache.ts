@@ -7,6 +7,36 @@ import type { TTLRuleMatchConditions, TTLRuleIndexEntry, TTLRulesIndex, TTLRuleM
 import type { IncomingMessage } from 'http';
 
 /**
+ * Resolve the originating HTTP request inside a cache SOURCE's instance `get()`.
+ *
+ * Harper v5 invokes a `sourcedFrom` source by instantiating it per-id and calling the instance
+ * `get()`. The source instance's context is a dedicated source context that links back to the
+ * originating request context via `requestContext` (see harper's Table source loader). The Fetch
+ * request and the request context are the same object in `server.http`, so the request (carrying
+ * `.url`/`.headers`, needed to build the origin URL) is found by walking the context chain for the
+ * first object exposing a `url`. v4 exposed this directly as `this.request`; keep that as a
+ * fallback for compatibility.
+ */
+export const resolveSourceRequest = (resource: any): any => {
+	const direct = resource?.request;
+	if (direct?.url) return direct;
+
+	const seen = new Set<any>();
+	let ctx = resource?.getContext?.();
+	while (ctx && typeof ctx === 'object' && !seen.has(ctx)) {
+		seen.add(ctx);
+		if (ctx.request?.url) return ctx.request;
+		if (typeof ctx.url === 'string') return ctx;
+		ctx = ctx.requestContext ?? ctx.getContext?.();
+	}
+	if (!direct)
+		throw new Error(
+			`resolveSourceRequest: could not resolve originating request from resource context (id=${resource?.getId?.()})`
+		);
+	return direct;
+};
+
+/**
  * Fetches a cache entry from a Harper table, handling origin errors and soft invalidation.
  * On an OriginErrorResponse, returns a passthrough Response instead of throwing (caller records analytics).
  * On invalidation, evicts the stale entry and re-fetches so the source is called again.
@@ -15,11 +45,14 @@ export const fetchCacheEntry = async (
 	table: any,
 	cacheKey: string,
 	cacheInvalidations: Record<string, number>,
-	invalidationType: 'page' | 'api'
+	invalidationType: 'page' | 'api',
+	request?: any
 ): Promise<CacheContent | Response> => {
 	const getEntry = async (): Promise<CacheContent | Response> => {
 		try {
-			return await table.get(cacheKey);
+			// Pass the originating request as the get() context so the cache SOURCE's instance
+			// get() can recover it (via getContext().requestContext) to build the origin URL.
+			return await table.get(cacheKey, request);
 		} catch (err) {
 			if (err instanceof OriginErrorResponse) {
 				return new Response(err.body, { status: err.status, statusText: err.statusText, headers: err.headers });
@@ -34,7 +67,9 @@ export const fetchCacheEntry = async (
 		!(entry instanceof Response) &&
 		isInvalidated(invalidationType, cacheInvalidations, entry.refreshedAt!, entry.groupCode)
 	) {
-		await table.delete(cacheKey);
+		// Sourced cache table: invalidate (not delete) the local copy so the next get re-fetches
+		// from the source. delete() would delegate to the source, which implements no delete.
+		await table.invalidate(cacheKey);
 		entry = await getEntry();
 	}
 

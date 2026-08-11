@@ -17,6 +17,10 @@ if [ -z "$CONTAINER_NAME" ] || [ -z "$HDB_VERSION" ] || [ -z "$HDB_ADMIN_USERNAM
   exit 1
 fi
 
+# NOTE: As of this writing the Harper v5 Docker image is not yet published to Docker Hub
+# (harperdb/harperdb only has v4 semver tags). The npm-based integration-tests.yml workflow is
+# the authoritative v5 test gate; this Docker-based deploy flow will work once a v5 image is
+# published (update the image reference below to the v5 image/tag at that time).
 IMAGE_TAG="harperdb/harperdb:$HDB_VERSION"
 echo "Starting Docker with Harper version: $HDB_VERSION"
 

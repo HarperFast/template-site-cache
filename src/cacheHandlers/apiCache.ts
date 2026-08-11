@@ -1,6 +1,12 @@
-import { Resource } from 'harperdb';
+import { Resource } from 'harper';
 import { buildDownstreamHeaders, cachePutObservabilityHeaders, headerGet } from '../util/headers.js';
-import { classifyRequest, headerToCacheTags, fetchCacheEntry, buildCacheResponse } from '../util/cache.js';
+import {
+	classifyRequest,
+	headerToCacheTags,
+	fetchCacheEntry,
+	buildCacheResponse,
+	resolveSourceRequest,
+} from '../util/cache.js';
 import { METHODS_WITH_BODY, NO_BODY_RESPONSES, CACHE_CONFIG, HANDLER_TIMEOUT_MS } from '../constants/index.js';
 import { buildAPICacheKey } from '../util/cacheKeys.js';
 import { SPECIAL_TTL } from '../resources/ttlRules.js';
@@ -62,9 +68,12 @@ const readRequestBody = async (request: any) => {
  * Called by Harper on a cache miss; the returned record is stored automatically.
  */
 export class APICacheSource extends Resource {
+	// Uses the standard instance get() Resource pattern: on a cache miss Harper instantiates the
+	// source per-id and invokes the instance method, exposing the id via this.getId() and the
+	// originating request via this.getContext() (matching Harper's own reference cache source).
 	async get() {
 		const cacheKey = this.getId() as string;
-		const request = this.request;
+		const request = resolveSourceRequest(this);
 		const url = buildOriginUrl(request, CACHE_CONFIG.apiOrigin, CACHE_CONFIG.apiPathReplacement);
 
 		const response = await fetchFromOrigin(url, {
@@ -109,7 +118,7 @@ const fetchCachedAPIResponse = async (
 	cacheInvalidations: Record<string, number>,
 	startTime: number
 ): Promise<Response> => {
-	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api');
+	const entry = await fetchCacheEntry(APICacheTable, cacheKey, cacheInvalidations, 'api', request);
 
 	const elapsed = () => Math.min(performance.now() - startTime, HANDLER_TIMEOUT_MS);
 
