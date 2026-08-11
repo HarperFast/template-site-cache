@@ -1,38 +1,38 @@
 {
-  "name": "template-site-cache",
-  "version": "1.0.0",
-  "description": "Harper Site Cache Template",
-  "type": "module",
-  "scripts": {
-    "generate:types": "graphql-codegen --config codegen.ts",
-    "build": "tsc",
-    "dev": "tsc; harper dev .",
-    "test:unit": "ENVIRONMENT=${ENVIRONMENT:-integration} node --test --import tsx tests/unit/*.test.ts",
-    "test:integration": "harper-integration-test-run integrationTests/**/*.test.ts",
-    "test:integration:legacy": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
-    "lint": "eslint src",
-    "format": "prettier --write ."
-  },
-  "prettier": "@harperdb/code-guidelines/prettier",
-  "author": "HarperDB, Inc.",
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@graphql-codegen/cli": "^5.0.3",
-    "@graphql-codegen/typescript": "^4.1.2",
-    "@graphql-codegen/typescript-operations": "^4.4.0",
-    "@harperdb/code-guidelines": "^0.0.2",
-    "@harperfast/integration-testing": "^0.4.0",
-    "@types/node": "^22.19.13",
-    "c8": "^10.1.3",
-    "eslint": "^9.37.0",
-    "graphql": "^16.10.0",
-    "harper": "^5.2.1",
-    "prettier": "^3.4.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.57.0"
-  },
-  "dependencies": {
-    "undici": "^7.22.0"
-  }
+	"name": "template-site-cache",
+	"version": "1.0.0",
+	"description": "Harper Site Cache Template",
+	"type": "module",
+	"scripts": {
+		"generate:types": "graphql-codegen --config codegen.ts",
+		"build": "tsc",
+		"dev": "tsc; harper dev .",
+		"test:unit": "ENVIRONMENT=${ENVIRONMENT:-integration} node --test --import tsx tests/unit/*.test.ts",
+		"test:integration": "harper-integration-test-run integrationTests/**/*.test.ts",
+		"test:integration:legacy": "npx c8 --reporter=lcov node --test tests/integration/integration.test.js",
+		"lint": "eslint src",
+		"format": "prettier --write ."
+	},
+	"prettier": "@harperdb/code-guidelines/prettier",
+	"author": "HarperDB, Inc.",
+	"license": "Apache-2.0",
+	"devDependencies": {
+		"@graphql-codegen/cli": "^5.0.3",
+		"@graphql-codegen/typescript": "^4.1.2",
+		"@graphql-codegen/typescript-operations": "^4.4.0",
+		"@harperdb/code-guidelines": "^0.0.2",
+		"@harperfast/integration-testing": "^0.4.0",
+		"@types/node": "^22.19.13",
+		"c8": "^10.1.3",
+		"eslint": "^9.37.0",
+		"graphql": "^16.10.0",
+		"harper": "^5.2.1",
+		"prettier": "^3.4.2",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2",
+		"typescript-eslint": "^8.57.0"
+	},
+	"dependencies": {
+		"undici": "^7.22.0"
+	}
 }
